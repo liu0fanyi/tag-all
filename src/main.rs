@@ -1,13 +1,11 @@
+//! Tag-All Frontend Entry Point
+
 mod app;
 
-use app::*;
-use leptos::*;
+use app::App;
+use leptos::prelude::*;
 
 fn main() {
     console_error_panic_hook::set_once();
-    mount_to_body(|| {
-        view! {
-            <App/>
-        }
-    })
+    mount_to_body(App);
 }
