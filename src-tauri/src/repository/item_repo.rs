@@ -158,7 +158,24 @@ impl Repository<Item> for ItemRepository {
     async fn delete(&self, id: u32) -> DomainResult<()> {
         let conn = self.conn.lock().await;
         
-        // CASCADE will delete children automatically
+        // Manual cascade: delete all descendants first
+        // Using recursive CTE to get all descendant IDs
+        conn.execute(
+            "DELETE FROM items WHERE id IN (
+                WITH RECURSIVE descendants AS (
+                    SELECT id FROM items WHERE parent_id = ?
+                    UNION ALL
+                    SELECT i.id FROM items i
+                    JOIN descendants d ON i.parent_id = d.id
+                )
+                SELECT id FROM descendants
+            )",
+            libsql::params![id],
+        )
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        // Delete the item itself
         conn.execute("DELETE FROM items WHERE id = ?", libsql::params![id])
             .await
             .map_err(|e| DomainError::Internal(e.to_string()))?;

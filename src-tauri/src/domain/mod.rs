@@ -5,6 +5,8 @@
 
 mod entity;
 mod item;
+mod tag;
 
 pub use entity::{Entity, DomainError, DomainResult};
 pub use item::{Item, ItemType};
+pub use tag::{Tag, ItemTag};

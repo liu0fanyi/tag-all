@@ -41,6 +41,11 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
 
     let conn = db.connect().map_err(|e| format!("Failed to connect: {}", e))?;
 
+    // Enable foreign keys (required for CASCADE to work)
+    conn.execute("PRAGMA foreign_keys = ON", ())
+        .await
+        .map_err(|e| format!("Failed to enable foreign keys: {}", e))?;
+
     // Run migrations
     run_migrations(&conn).await?;
 
@@ -106,6 +111,47 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
     // Create index for faster parent-child queries
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Level 3: Tags table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            color TEXT
+        )",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Level 3: Item-Tag many-to-many relationship
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS item_tags (
+            item_id INTEGER NOT NULL,
+            tag_id INTEGER NOT NULL,
+            PRIMARY KEY (item_id, tag_id),
+            FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE,
+            FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        )",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Level 3: Tag-Tag multi-parent relationship (tag can have multiple parent tags)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tag_tags (
+            child_tag_id INTEGER NOT NULL,
+            parent_tag_id INTEGER NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (child_tag_id, parent_tag_id),
+            FOREIGN KEY(child_tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+            FOREIGN KEY(parent_tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        )",
         (),
     )
     .await

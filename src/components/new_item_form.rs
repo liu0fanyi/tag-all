@@ -1,6 +1,6 @@
 //! New Item Form Component
 //!
-//! Form for creating new items.
+//! Form for creating new items (not tags).
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -44,7 +44,7 @@ pub fn NewItemForm() -> impl IntoView {
                     if let Some(pid) = ctx.adding_under.get() {
                         format!("Add child under #{}...", pid)
                     } else {
-                        "Add new root item...".to_string()
+                        "Add new item...".to_string()
                     }
                 }
                 prop:value=move || new_text.get()

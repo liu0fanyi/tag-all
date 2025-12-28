@@ -18,3 +18,11 @@ pub struct Item {
     pub position: i32,
     pub collapsed: bool,
 }
+
+/// Tag data structure (matches backend)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tag {
+    pub id: u32,
+    pub name: String,
+    pub color: Option<String>,
+}
