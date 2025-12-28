@@ -28,6 +28,22 @@ pub trait Repository<T: Entity>: Send + Sync {
     async fn delete(&self, id: T::Id) -> DomainResult<()>;
 }
 
+/// Extension for repositories that support hierarchical structure (Level 2)
+#[async_trait]
+pub trait HierarchyRepository<T: Entity>: Repository<T> {
+    /// Get children of a parent (None = get root items)
+    async fn get_children(&self, parent_id: Option<T::Id>) -> DomainResult<Vec<T>>;
+    
+    /// Move item to new parent at specified position
+    async fn move_to(&self, id: T::Id, new_parent_id: Option<T::Id>, position: i32) -> DomainResult<()>;
+    
+    /// Get all descendants of an item (recursive)
+    async fn get_descendants(&self, id: T::Id) -> DomainResult<Vec<T>>;
+    
+    /// Toggle collapsed state
+    async fn toggle_collapsed(&self, id: T::Id) -> DomainResult<bool>;
+}
+
 /// Extension for repositories that support text search
 #[async_trait]
 pub trait SearchableRepository<T: Entity>: Repository<T> {

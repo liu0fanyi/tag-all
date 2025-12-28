@@ -1,7 +1,6 @@
 //! Item Entity
 //!
-//! Represents a todo/task item. At Level 1, this is a simple flat structure.
-//! Parent-child relationships will be added in Level 2.
+//! Represents a todo/task item with hierarchical structure (single parent).
 
 use serde::{Deserialize, Serialize};
 use super::entity::Entity;
@@ -45,11 +44,9 @@ impl ItemType {
     }
 }
 
-/// A todo/task item
+/// A todo/task item with hierarchical structure
 ///
-/// Level 1: Basic flat structure
-/// Level 2 will add: parent_id, position
-/// Level 3 will add: tag_ids
+/// Level 2: Added parent_id, position, collapsed for tree structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Item {
     /// Unique identifier
@@ -66,16 +63,21 @@ pub struct Item {
     pub target_count: Option<i32>,
     /// Current count for countdown type
     pub current_count: i32,
-    // Level 2 fields (commented for now):
-    // pub parent_id: Option<u32>,
-    // pub position: i32,
-    // pub collapsed: bool,
+    
+    // Level 2 fields:
+    /// Parent item ID (None = root level)
+    pub parent_id: Option<u32>,
+    /// Position within siblings (for ordering)
+    pub position: i32,
+    /// Whether children are collapsed in UI
+    pub collapsed: bool,
+    
     // Level 5 field:
     // pub workspace_id: u32,
 }
 
 impl Item {
-    /// Create a new item with default values
+    /// Create a new root item with default values
     pub fn new(id: u32, text: String, item_type: ItemType) -> Self {
         Self {
             id,
@@ -85,7 +87,31 @@ impl Item {
             memo: None,
             target_count: None,
             current_count: 0,
+            parent_id: None,
+            position: 0,
+            collapsed: false,
         }
+    }
+
+    /// Create a new child item under a parent
+    pub fn new_child(id: u32, text: String, item_type: ItemType, parent_id: u32, position: i32) -> Self {
+        Self {
+            id,
+            text,
+            completed: false,
+            item_type,
+            memo: None,
+            target_count: None,
+            current_count: 0,
+            parent_id: Some(parent_id),
+            position,
+            collapsed: false,
+        }
+    }
+
+    /// Check if this is a root item (no parent)
+    pub fn is_root(&self) -> bool {
+        self.parent_id.is_none()
     }
 }
 
@@ -107,6 +133,14 @@ mod tests {
         assert_eq!(item.id(), 1);
         assert_eq!(item.text, "Test item");
         assert!(!item.completed);
+        assert!(item.is_root());
+    }
+
+    #[test]
+    fn test_child_item_creation() {
+        let child = Item::new_child(2, "Child".to_string(), ItemType::Daily, 1, 0);
+        assert_eq!(child.parent_id, Some(1));
+        assert!(!child.is_root());
     }
 
     #[test]

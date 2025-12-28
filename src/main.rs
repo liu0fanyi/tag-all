@@ -1,5 +1,10 @@
 //! Tag-All Frontend Entry Point
 
+mod models;
+mod commands;
+mod tree;
+mod context;
+mod components;
 mod app;
 
 use app::App;

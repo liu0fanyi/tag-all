@@ -1,0 +1,39 @@
+//! Application Context
+//!
+//! Shared state provided via Leptos Context API.
+
+use leptos::prelude::*;
+
+/// App-wide signals provided via context
+#[derive(Clone, Copy)]
+pub struct AppContext {
+    /// Trigger to reload items from backend
+    pub reload_trigger: WriteSignal<u32>,
+    /// Which item to add a child under (None = root) - read
+    pub adding_under: ReadSignal<Option<u32>>,
+    /// Which item to add a child under (None = root) - write
+    set_adding_under: WriteSignal<Option<u32>>,
+}
+
+impl AppContext {
+    pub fn new(
+        reload_trigger: WriteSignal<u32>,
+        adding_under: (ReadSignal<Option<u32>>, WriteSignal<Option<u32>>),
+    ) -> Self {
+        Self {
+            reload_trigger,
+            adding_under: adding_under.0,
+            set_adding_under: adding_under.1,
+        }
+    }
+    
+    /// Trigger a reload of items
+    pub fn reload(&self) {
+        self.reload_trigger.update(|v| *v += 1);
+    }
+    
+    /// Set parent for new child item
+    pub fn set_adding_under(&self, parent_id: Option<u32>) {
+        self.set_adding_under.set(parent_id);
+    }
+}

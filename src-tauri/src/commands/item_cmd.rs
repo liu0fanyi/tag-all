@@ -1,10 +1,10 @@
-//! Tauri Commands for Item CRUD
+//! Tauri Commands for Item CRUD + Hierarchy
 //!
 //! Exposes Item operations to the frontend via Tauri IPC.
 
 use tauri::State;
 use crate::domain::{Item, ItemType};
-use crate::repository::{Repository, ItemRepository};
+use crate::repository::{Repository, HierarchyRepository, ItemRepository};
 use crate::AppState;
 
 /// Create a new item
@@ -13,14 +13,16 @@ pub async fn create_item(
     state: State<'_, AppState>,
     text: String,
     item_type: Option<String>,
+    parent_id: Option<u32>,
 ) -> Result<Item, String> {
     let repo = state.item_repo.lock().await;
     
-    let item = Item::new(
+    let mut item = Item::new(
         0, // ID will be assigned by database
         text,
         item_type.map(|t| ItemType::from_str(&t)).unwrap_or_default(),
     );
+    item.parent_id = parent_id;
     
     repo.create(&item).await.map_err(|e| e.to_string())
 }
@@ -30,6 +32,16 @@ pub async fn create_item(
 pub async fn list_items(state: State<'_, AppState>) -> Result<Vec<Item>, String> {
     let repo = state.item_repo.lock().await;
     repo.list().await.map_err(|e| e.to_string())
+}
+
+/// Get children of a parent (None = root items)
+#[tauri::command]
+pub async fn get_children(
+    state: State<'_, AppState>,
+    parent_id: Option<u32>,
+) -> Result<Vec<Item>, String> {
+    let repo = state.item_repo.lock().await;
+    repo.get_children(parent_id).await.map_err(|e| e.to_string())
 }
 
 /// Get item by ID
@@ -64,12 +76,15 @@ pub async fn update_item(
         memo: memo.or(existing.memo),
         target_count: existing.target_count,
         current_count: existing.current_count,
+        parent_id: existing.parent_id,
+        position: existing.position,
+        collapsed: existing.collapsed,
     };
     
     repo.update(&updated).await.map_err(|e| e.to_string())
 }
 
-/// Delete item
+/// Delete item (cascade deletes children)
 #[tauri::command]
 pub async fn delete_item(state: State<'_, AppState>, id: u32) -> Result<(), String> {
     let repo = state.item_repo.lock().await;
@@ -93,4 +108,30 @@ pub async fn toggle_item(state: State<'_, AppState>, id: u32) -> Result<Item, St
     }
     
     repo.update(&item).await.map_err(|e| e.to_string())
+}
+
+/// Move item to new parent at position
+#[tauri::command]
+pub async fn move_item(
+    state: State<'_, AppState>,
+    id: u32,
+    new_parent_id: Option<u32>,
+    position: i32,
+) -> Result<(), String> {
+    let repo = state.item_repo.lock().await;
+    repo.move_to(id, new_parent_id, position).await.map_err(|e| e.to_string())
+}
+
+/// Toggle collapsed state of an item
+#[tauri::command]
+pub async fn toggle_collapsed(state: State<'_, AppState>, id: u32) -> Result<bool, String> {
+    let repo = state.item_repo.lock().await;
+    repo.toggle_collapsed(id).await.map_err(|e| e.to_string())
+}
+
+/// Get all descendants of an item
+#[tauri::command]
+pub async fn get_descendants(state: State<'_, AppState>, id: u32) -> Result<Vec<Item>, String> {
+    let repo = state.item_repo.lock().await;
+    repo.get_descendants(id).await.map_err(|e| e.to_string())
 }

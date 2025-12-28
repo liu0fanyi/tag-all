@@ -59,6 +59,11 @@ pub fn run() {
             commands::update_item,
             commands::delete_item,
             commands::toggle_item,
+            // Level 2: Hierarchy commands
+            commands::get_children,
+            commands::move_item,
+            commands::toggle_collapsed,
+            commands::get_descendants,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
