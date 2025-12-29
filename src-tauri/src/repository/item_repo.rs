@@ -46,53 +46,8 @@ impl ItemRepository {
 #[async_trait]
 impl Repository<Item> for ItemRepository {
     async fn create(&self, entity: &Item) -> DomainResult<Item> {
-        let conn = self.conn.lock().await;
-        
-        // Calculate position in same connection
-        let position = if entity.position == 0 {
-            let query = match entity.parent_id {
-                Some(pid) => format!(
-                    "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id = {}", pid
-                ),
-                None => "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id IS NULL".to_string(),
-            };
-            
-            let mut rows = conn.query(&query, ())
-                .await
-                .map_err(|e| DomainError::Internal(e.to_string()))?;
-            
-            if let Ok(Some(row)) = rows.next().await {
-                row.get::<i32>(0).unwrap_or(0)
-            } else {
-                0
-            }
-        } else {
-            entity.position
-        };
-        
-        conn.execute(
-            "INSERT INTO items (text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            libsql::params![
-                entity.text.clone(),
-                if entity.completed { 1 } else { 0 },
-                entity.item_type.as_str().to_string(),
-                entity.memo.clone(),
-                entity.target_count,
-                entity.current_count,
-                entity.parent_id,
-                position,
-                if entity.collapsed { 1 } else { 0 }
-            ],
-        )
-        .await
-        .map_err(|e| DomainError::Internal(e.to_string()))?;
-
-        let id = conn.last_insert_rowid() as u32;
-        
-        let mut item = entity.clone();
-        item.id = id;
-        item.position = position;
-        Ok(item)
+        // Delegate to create_with_workspace with default workspace ID
+        self.create_with_workspace(entity, 1).await
     }
 
     async fn find_by_id(&self, id: u32) -> DomainResult<Option<Item>> {
