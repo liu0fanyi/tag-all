@@ -76,6 +76,8 @@ pub fn run() {
             commands::move_item,
             commands::toggle_collapsed,
             commands::get_descendants,
+            commands::decrement_item,
+            commands::set_item_count,
             // Level 3: Tag CRUD + Item-Tag relationships
             commands::create_tag,
             commands::list_tags,

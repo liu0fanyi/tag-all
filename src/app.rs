@@ -58,6 +58,7 @@ pub fn App() -> impl IntoView {
             <TagColumn
                 selected_tag=selected_tag
                 set_selected_tag=set_selected_tag
+                editing_target=editing_target
                 set_editing_target=set_editing_target
             />
             
@@ -78,6 +79,7 @@ pub fn App() -> impl IntoView {
                     items=items
                     selected_item=selected_item
                     set_selected_item=set_selected_item
+                    editing_target=editing_target
                     set_editing_target=set_editing_target
                 />
                 

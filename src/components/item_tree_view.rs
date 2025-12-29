@@ -20,6 +20,7 @@ pub fn ItemTreeView(
     items: ReadSignal<Vec<Item>>,
     selected_item: ReadSignal<Option<u32>>,
     set_selected_item: WriteSignal<Option<u32>>,
+    editing_target: ReadSignal<Option<EditTarget>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
 ) -> impl IntoView {
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
@@ -64,7 +65,20 @@ pub fn ItemTreeView(
             
             <For
                 each=tree_items
-                key=|(item, _)| (item.id, item.position, item.parent_id)
+                key=|(item, depth)| {
+                    // Use a tuple of all mutable fields to ensure changes cause re-render
+                    // This is verbose but guaranteed to work
+                    (
+                        item.id,
+                        *depth,
+                        item.text.clone(),
+                        item.item_type.clone(),
+                        item.completed,
+                        item.current_count,
+                        item.position,
+                        item.parent_id,
+                    )
+                }
                 children=move |(item, depth)| {
                     let id = item.id;
                     let parent_id = item.parent_id;
@@ -103,7 +117,9 @@ pub fn ItemTreeView(
                                 item=item.clone()
                                 depth=depth
                                 has_children=has_children
+                                editing_target=editing_target
                                 set_editing_target=set_editing_target
+                                set_selected_item=set_selected_item
                             />
                         </div>
                         

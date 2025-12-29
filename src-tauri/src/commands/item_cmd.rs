@@ -148,3 +148,43 @@ pub async fn get_descendants(state: State<'_, AppState>, id: u32) -> Result<Vec<
     let repo = state.item_repo.lock().await;
     repo.get_descendants(id).await.map_err(|e| e.to_string())
 }
+
+/// Decrement current_count for countdown items
+#[tauri::command]
+pub async fn decrement_item(state: State<'_, AppState>, id: u32) -> Result<Item, String> {
+    println!("[DECREMENT_ITEM] id={}", id);
+    let repo = state.item_repo.lock().await;
+    
+    let mut item = repo.find_by_id(id).await.map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Item {} not found", id))?;
+    
+    // Decrement current_count
+    if item.current_count > 0 {
+        item.current_count -= 1;
+    }
+    
+    // Mark as completed if count reaches 0
+    if item.current_count <= 0 {
+        item.completed = true;
+    }
+    
+    repo.update(&item).await.map_err(|e| e.to_string())
+}
+
+/// Set target_count for countdown items
+#[tauri::command]
+pub async fn set_item_count(state: State<'_, AppState>, id: u32, target_count: Option<i32>) -> Result<Item, String> {
+    let repo = state.item_repo.lock().await;
+    
+    let mut item = repo.find_by_id(id).await.map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Item {} not found", id))?;
+    
+    item.target_count = target_count;
+    // Also set current_count to target if not already counting
+    if let Some(count) = target_count {
+        item.current_count = count;
+        item.completed = false;  // Reset completion
+    }
+    
+    repo.update(&item).await.map_err(|e| e.to_string())
+}

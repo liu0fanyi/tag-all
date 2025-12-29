@@ -120,6 +120,7 @@ fn TagTreeNode(
     parent_id: Option<u32>,
     selected_tag: ReadSignal<Option<u32>>,
     set_selected_tag: WriteSignal<Option<u32>>,
+    editing_target: ReadSignal<Option<EditTarget>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
 ) -> impl IntoView {
     let id = tag.id;
@@ -158,10 +159,17 @@ fn TagTreeNode(
         matches!(dnd.drop_target_read.get(), Some(DropTarget::Item(tid)) if tid == id)
     };
     
+    let name_for_menu = name.clone();
     let on_context_menu = move |ev: web_sys::MouseEvent| {
         ev.prevent_default();
-        set_selected_tag.set(Some(id)); // Also select the tag
-        set_editing_target.set(Some(EditTarget::Tag(id, name.clone())));
+        // Toggle on re-click
+        let is_editing_this = matches!(editing_target.get(), Some(EditTarget::Tag(eid, _)) if eid == id);
+        if is_editing_this {
+            set_editing_target.set(None);
+        } else {
+            set_selected_tag.set(Some(id));
+            set_editing_target.set(Some(EditTarget::Tag(id, name_for_menu.clone())));
+        }
     };
     
     let row_class = move || {
@@ -223,7 +231,13 @@ fn TagTreeNode(
                     <div class="tag-tree-children">
                         <For
                             each=move || children.get()
-                            key=|child| (child.id, child.position)
+                            key=|child| {
+                                use std::collections::hash_map::DefaultHasher;
+                                use std::hash::{Hash, Hasher};
+                                let mut h = DefaultHasher::new();
+                                child.name.hash(&mut h);
+                                (child.id, h.finish())
+                            }
                             children=move |child| {
                                 let child_pos = child.position;
                                 view! {
@@ -236,6 +250,7 @@ fn TagTreeNode(
                                         parent_id=Some(id)
                                         selected_tag=selected_tag
                                         set_selected_tag=set_selected_tag
+                                        editing_target=editing_target
                                         set_editing_target=set_editing_target
                                     />
                                 }
@@ -262,6 +277,7 @@ pub enum EditTarget {
 pub fn TagColumn(
     selected_tag: ReadSignal<Option<u32>>,
     set_selected_tag: WriteSignal<Option<u32>>,
+    editing_target: ReadSignal<Option<EditTarget>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
 ) -> impl IntoView {
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
@@ -325,7 +341,13 @@ pub fn TagColumn(
             <div class="tag-tree">
                 <For
                     each=move || root_tags.get()
-                    key=|tag| (tag.id, tag.position)
+                    key=|tag| {
+                        use std::collections::hash_map::DefaultHasher;
+                        use std::hash::{Hash, Hasher};
+                        let mut h = DefaultHasher::new();
+                        tag.name.hash(&mut h);
+                        (tag.id, h.finish())
+                    }
                     children=move |tag| {
                         let position = tag.position;
                         view! {
@@ -338,6 +360,7 @@ pub fn TagColumn(
                                 parent_id=None
                                 selected_tag=selected_tag
                                 set_selected_tag=set_selected_tag
+                                editing_target=editing_target
                                 set_editing_target=set_editing_target
                             />
                         }

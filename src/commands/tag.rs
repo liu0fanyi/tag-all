@@ -92,6 +92,19 @@ pub async fn delete_tag(id: u32) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+struct UpdateTagArgs<'a> {
+    id: u32,
+    name: Option<&'a str>,
+    color: Option<&'a str>,
+}
+
+pub async fn update_tag(id: u32, name: Option<&str>, color: Option<&str>) -> Result<Tag, String> {
+    let js_args = serde_wasm_bindgen::to_value(&UpdateTagArgs { id, name, color }).map_err(|e| e.to_string())?;
+    let result = invoke("update_tag", js_args).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}
+
 // ========================
 // Item-Tag Relationship Commands
 // ========================
