@@ -21,12 +21,14 @@ pub fn NewItemForm() -> impl IntoView {
         let text = new_text.get();
         if text.is_empty() { return; }
         let parent = ctx.adding_under.get();
+        let workspace = ctx.current_workspace.get();
         
         spawn_local(async move {
             let args = CreateItemArgs {
                 text: &text,
                 item_type: Some("daily"),
                 parent_id: parent,
+                workspace_id: Some(workspace),
             };
             if commands::create_item(&args).await.is_ok() {
                 set_new_text.set(String::new());

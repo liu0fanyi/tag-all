@@ -176,7 +176,39 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?;
 
-    // Level 5 will add: workspace_id column
+    // Level 5: Workspaces table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS workspaces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        )",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Add workspace_id column to items if missing
+    if !column_exists(conn, "items", "workspace_id").await {
+        conn.execute("ALTER TABLE items ADD COLUMN workspace_id INTEGER DEFAULT 1", ())
+            .await
+            .map_err(|e| format!("Failed to add workspace_id: {}", e))?;
+    }
+
+    // Create default workspace if it doesn't exist
+    conn.execute(
+        "INSERT OR IGNORE INTO workspaces (id, name) VALUES (1, 'Default')",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Migrate existing items without workspace_id to default workspace
+    conn.execute(
+        "UPDATE items SET workspace_id = 1 WHERE workspace_id IS NULL",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }

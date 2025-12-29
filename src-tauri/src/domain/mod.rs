@@ -6,7 +6,9 @@
 mod entity;
 mod item;
 mod tag;
+mod workspace;
 
 pub use entity::{Entity, DomainError, DomainResult};
 pub use item::{Item, ItemType};
 pub use tag::{Tag, ItemTag};
+pub use workspace::Workspace;

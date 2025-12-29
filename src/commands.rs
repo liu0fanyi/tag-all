@@ -4,7 +4,7 @@
 
 use wasm_bindgen::prelude::*;
 use serde::Serialize;
-use crate::models::{Item, Tag};
+use crate::models::{Item, Tag, Workspace};
 
 #[wasm_bindgen]
 extern "C" {
@@ -23,6 +23,8 @@ pub struct CreateItemArgs<'a> {
     pub item_type: Option<&'a str>,
     #[serde(rename = "parentId")]
     pub parent_id: Option<u32>,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -246,5 +248,37 @@ pub async fn save_window_state(width: f64, height: f64, x: f64, y: f64, pinned: 
 
 pub async fn load_window_state() -> Result<Option<WindowState>, String> {
     let result = invoke("load_window_state", JsValue::NULL).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}
+
+// ========================
+// Level 5: Workspace Commands
+// ========================
+
+pub async fn list_workspaces() -> Result<Vec<Workspace>, String> {
+    let result = invoke("list_workspaces", JsValue::NULL).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct CreateWorkspaceArgs<'a> {
+    pub name: &'a str,
+}
+
+pub async fn create_workspace(name: &str) -> Result<Workspace, String> {
+    let js_args = serde_wasm_bindgen::to_value(&CreateWorkspaceArgs { name }).map_err(|e| e.to_string())?;
+    let result = invoke("create_workspace", js_args).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceIdArgs {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: u32,
+}
+
+pub async fn list_items_by_workspace(workspace_id: u32) -> Result<Vec<Item>, String> {
+    let js_args = serde_wasm_bindgen::to_value(&WorkspaceIdArgs { workspace_id }).map_err(|e| e.to_string())?;
+    let result = invoke("list_items_by_workspace", js_args).await;
     serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
 }

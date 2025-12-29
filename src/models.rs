@@ -27,3 +27,10 @@ pub struct Tag {
     pub color: Option<String>,
     pub position: i32,
 }
+
+/// Workspace data structure (matches backend)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Workspace {
+    pub id: u32,
+    pub name: String,
+}

@@ -8,6 +8,7 @@ mod tag_column;
 mod tag_editor;
 mod item_tree_view;
 mod drop_zone;
+mod workspace_tab_bar;
 
 pub use tree_item::TreeItem;
 pub use new_item_form::NewItemForm;
@@ -15,3 +16,4 @@ pub use tag_column::{TagColumn, EditTarget};
 pub use tag_editor::TagEditor;
 pub use item_tree_view::ItemTreeView;
 pub use drop_zone::DropZone;
+pub use workspace_tab_bar::WorkspaceTabBar;

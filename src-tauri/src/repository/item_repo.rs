@@ -307,3 +307,77 @@ fn row_to_item(row: &libsql::Row) -> DomainResult<Item> {
         collapsed: row.get::<i32>(9).unwrap_or(0) != 0,
     })
 }
+
+/// Additional ItemRepository methods
+impl ItemRepository {
+    /// List items by workspace
+    pub async fn list_by_workspace(&self, workspace_id: u32) -> DomainResult<Vec<Item>> {
+        let conn = self.conn.lock().await;
+        
+        let mut rows = conn
+            .query(
+                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed FROM items WHERE workspace_id = ? ORDER BY parent_id NULLS FIRST, position ASC",
+                libsql::params![workspace_id],
+            )
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let mut items = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            items.push(row_to_item(&row)?);
+        }
+        Ok(items)
+    }
+
+    /// Create item with specific workspace_id
+    pub async fn create_with_workspace(&self, entity: &Item, workspace_id: u32) -> DomainResult<Item> {
+        let conn = self.conn.lock().await;
+        
+        // Calculate position in same connection
+        let position = if entity.position == 0 {
+            let query = match entity.parent_id {
+                Some(pid) => format!(
+                    "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id = {} AND workspace_id = {}", pid, workspace_id
+                ),
+                None => format!("SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id IS NULL AND workspace_id = {}", workspace_id),
+            };
+            
+            let mut rows = conn.query(&query, ())
+                .await
+                .map_err(|e| DomainError::Internal(e.to_string()))?;
+            
+            if let Ok(Some(row)) = rows.next().await {
+                row.get::<i32>(0).unwrap_or(0)
+            } else {
+                0
+            }
+        } else {
+            entity.position
+        };
+        
+        conn.execute(
+            "INSERT INTO items (text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            libsql::params![
+                entity.text.clone(),
+                if entity.completed { 1 } else { 0 },
+                entity.item_type.as_str().to_string(),
+                entity.memo.clone(),
+                entity.target_count,
+                entity.current_count,
+                entity.parent_id,
+                position,
+                if entity.collapsed { 1 } else { 0 },
+                workspace_id
+            ],
+        )
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        let id = conn.last_insert_rowid() as u32;
+        
+        let mut item = entity.clone();
+        item.id = id;
+        item.position = position;
+        Ok(item)
+    }
+}

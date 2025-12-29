@@ -15,18 +15,22 @@ pub struct AppContext {
     pub adding_under: ReadSignal<Option<u32>>,
     /// Which item to add a child under (None = root) - write
     set_adding_under: WriteSignal<Option<u32>>,
+    /// Current workspace ID - read
+    pub current_workspace: ReadSignal<u32>,
 }
 
 impl AppContext {
     pub fn new(
         reload_trigger: (ReadSignal<u32>, WriteSignal<u32>),
         adding_under: (ReadSignal<Option<u32>>, WriteSignal<Option<u32>>),
+        current_workspace: ReadSignal<u32>,
     ) -> Self {
         Self {
             reload_trigger: reload_trigger.0,
             set_reload_trigger: reload_trigger.1,
             adding_under: adding_under.0,
             set_adding_under: adding_under.1,
+            current_workspace,
         }
     }
     

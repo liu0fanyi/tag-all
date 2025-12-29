@@ -367,6 +367,106 @@ button {
   align-items: center;
 }
 
+/* Workspace Tab Bar */
+.workspace-tab-bar {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  max-width: 600px;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.workspace-tab {
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.08);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: inherit;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.workspace-tab:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.workspace-tab.active {
+  background: #4a9eff;
+  color: white;
+  font-weight: 500;
+}
+
+.workspace-add-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px dashed rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: inherit;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.workspace-add-btn:hover {
+  opacity: 1;
+}
+
+.workspace-add-form {
+  display: flex;
+  gap: 4px;
+}
+
+.workspace-add-form input {
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  font-size: 13px;
+  width: 120px;
+}
+
+.workspace-add-form button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.workspace-add-form button[type="submit"] {
+  background: #4a9eff;
+  color: white;
+}
+
+@media (prefers-color-scheme: dark) {
+  .workspace-tab {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .workspace-tab:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .workspace-add-btn {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .workspace-add-form input {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: white;
+  }
+
+  .workspace-add-form button {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+}
+
 /* Tag Column Sidebar */
 .tag-column {
   width: 200px;

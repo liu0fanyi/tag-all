@@ -14,13 +14,14 @@ mod domain;
 mod repository;
 mod commands;
 
-use repository::{ItemRepository, TagRepository, WindowStateRepository, init_db};
+use repository::{ItemRepository, TagRepository, WindowStateRepository, WorkspaceRepository, init_db};
 
 /// Application state shared across commands
 pub struct AppState {
     pub item_repo: Mutex<ItemRepository>,
     pub tag_repo: Mutex<TagRepository>,
     pub window_repo: Mutex<WindowStateRepository>,
+    pub workspace_repo: Mutex<WorkspaceRepository>,
 }
 
 /// Get database path from app handle
@@ -49,12 +50,14 @@ pub fn run() {
                 let item_repo = ItemRepository::new(conn.clone());
                 let tag_repo = TagRepository::new(conn.clone());
                 let window_repo = WindowStateRepository::new(conn.clone());
+                let workspace_repo = WorkspaceRepository::new(conn.clone());
                 
                 // Store state
                 app_handle.manage(AppState {
                     item_repo: Mutex::new(item_repo),
                     tag_repo: Mutex::new(tag_repo),
                     window_repo: Mutex::new(window_repo),
+                    workspace_repo: Mutex::new(workspace_repo),
                 });
             });
             
@@ -64,6 +67,7 @@ pub fn run() {
             // Level 1-2: Item CRUD + Hierarchy
             commands::create_item,
             commands::list_items,
+            commands::list_items_by_workspace,
             commands::get_item,
             commands::update_item,
             commands::delete_item,
@@ -93,6 +97,11 @@ pub fn run() {
             // Level 4: Window state
             commands::save_window_state,
             commands::load_window_state,
+            // Level 5: Workspaces
+            commands::list_workspaces,
+            commands::create_workspace,
+            commands::delete_workspace,
+            commands::rename_workspace,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -14,6 +14,7 @@ pub async fn create_item(
     text: String,
     item_type: Option<String>,
     parent_id: Option<u32>,
+    workspace_id: Option<u32>,
 ) -> Result<Item, String> {
     let repo = state.item_repo.lock().await;
     
@@ -24,7 +25,9 @@ pub async fn create_item(
     );
     item.parent_id = parent_id;
     
-    repo.create(&item).await.map_err(|e| e.to_string())
+    // Use provided workspace_id or default to 1
+    let ws_id = workspace_id.unwrap_or(1);
+    repo.create_with_workspace(&item, ws_id).await.map_err(|e| e.to_string())
 }
 
 /// List all items
@@ -32,6 +35,16 @@ pub async fn create_item(
 pub async fn list_items(state: State<'_, AppState>) -> Result<Vec<Item>, String> {
     let repo = state.item_repo.lock().await;
     repo.list().await.map_err(|e| e.to_string())
+}
+
+/// List items by workspace
+#[tauri::command]
+pub async fn list_items_by_workspace(
+    workspace_id: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<Item>, String> {
+    let repo = state.item_repo.lock().await;
+    repo.list_by_workspace(workspace_id).await.map_err(|e| e.to_string())
 }
 
 /// Get children of a parent (None = root items)
