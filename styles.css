@@ -836,31 +836,44 @@ button {
 }
 
 /* Drop zone (horizontal separator between items) */
-/* Always visible (thin), larger hit area via padding */
+/* Thin visible line but large hit area overlapping items */
 .drop-zone {
+  position: relative;
   height: 2px;
-  margin: 0 8px;
-  padding: 6px 0;
-  /* Larger hit area - pointer events work on padding */
-  border-radius: 1px;
-  background-color: rgba(0, 0, 0, 0.06);
+  margin: -8px 8px;
+  /* Negative margin to overlap with items */
+  padding: 10px 0;
+  /* Large padding for hit area (total height = 22px) */
+  background-color: transparent;
   background-clip: content-box;
-  /* Only show color in 2px content area */
-  transition: background-color 0.15s ease, height 0.1s ease;
+  border-radius: 1px;
+  transition: background-color 0.15s ease;
   cursor: pointer;
   box-sizing: content-box;
+  z-index: 10;
+  /* Above items for mouse events */
+}
+
+/* Hidden state (no drag in progress) */
+.drop-zone.hidden {
+  pointer-events: none;
+  background-color: transparent;
+}
+
+/* Visible state when dragging (show thin line) */
+.drop-zone:not(.hidden) {
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 /* Active state when hovering during drag */
 .drop-zone.active {
-  height: 4px;
   background-color: #4a9eff;
-  box-shadow: 0 0 6px rgba(74, 158, 255, 0.4);
+  box-shadow: 0 0 8px rgba(74, 158, 255, 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
-  .drop-zone {
-    background-color: rgba(255, 255, 255, 0.1);
+  .drop-zone:not(.hidden) {
+    background-color: rgba(255, 255, 255, 0.12);
   }
 }
 
