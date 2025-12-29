@@ -14,6 +14,8 @@ pub struct Tag {
     pub name: String,
     /// Color (hex, e.g., "#FF5733")
     pub color: Option<String>,
+    /// Position for ordering (root tags)
+    pub position: i32,
 }
 
 impl Tag {
@@ -22,6 +24,7 @@ impl Tag {
             id,
             name,
             color: None,
+            position: 0,
         }
     }
 
@@ -30,6 +33,7 @@ impl Tag {
             id,
             name,
             color: Some(color),
+            position: 0,
         }
     }
 }

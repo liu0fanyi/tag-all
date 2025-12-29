@@ -116,17 +116,21 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?;
 
-    // Level 3: Tags table
+    // Level 3: Tags table (with position for root tag ordering)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
-            color TEXT
+            color TEXT,
+            position INTEGER NOT NULL DEFAULT 0
         )",
         (),
     )
     .await
     .map_err(|e| e.to_string())?;
+    
+    // Add position column if missing (migration)
+    let _ = conn.execute("ALTER TABLE tags ADD COLUMN position INTEGER DEFAULT 0", ()).await;
 
     // Level 3: Item-Tag many-to-many relationship
     conn.execute(
@@ -151,6 +155,21 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             PRIMARY KEY (child_tag_id, parent_tag_id),
             FOREIGN KEY(child_tag_id) REFERENCES tags(id) ON DELETE CASCADE,
             FOREIGN KEY(parent_tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        )",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Level 4: Window state persistence
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS window_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            width REAL NOT NULL DEFAULT 800,
+            height REAL NOT NULL DEFAULT 600,
+            x REAL NOT NULL DEFAULT 100,
+            y REAL NOT NULL DEFAULT 100,
+            pinned INTEGER NOT NULL DEFAULT 0
         )",
         (),
     )

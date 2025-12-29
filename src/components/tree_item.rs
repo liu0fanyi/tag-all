@@ -25,6 +25,7 @@ pub fn TreeItem(
     let completed = item.completed;
     let collapsed = item.collapsed;
     let text = item.text.clone();
+    let position = item.position;
     let text_for_menu = text.clone();
     let indent = depth * 24;
     
@@ -82,8 +83,8 @@ pub fn TreeItem(
                 }
             />
             
-            // Text
-            <span class="item-text">{text}</span>
+            // Text with position for debugging
+            <span class="item-text">{format!("[{}] {}", position, text)}</span>
             
             // Add child button
             <button class="add-child-btn" on:click=move |ev| {

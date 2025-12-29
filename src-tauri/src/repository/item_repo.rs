@@ -209,6 +209,27 @@ impl HierarchyRepository<Item> for ItemRepository {
     async fn move_to(&self, id: u32, new_parent_id: Option<u32>, position: i32) -> DomainResult<()> {
         let conn = self.conn.lock().await;
         
+        // Make room by shifting existing items at target position down
+        match new_parent_id {
+            Some(pid) => {
+                conn.execute(
+                    "UPDATE items SET position = position + 1 WHERE parent_id = ? AND position >= ? AND id != ?",
+                    libsql::params![pid, position, id],
+                )
+                .await
+                .map_err(|e| DomainError::Internal(e.to_string()))?;
+            }
+            None => {
+                conn.execute(
+                    "UPDATE items SET position = position + 1 WHERE parent_id IS NULL AND position >= ? AND id != ?",
+                    libsql::params![position, id],
+                )
+                .await
+                .map_err(|e| DomainError::Internal(e.to_string()))?;
+            }
+        }
+        
+        // Move the item
         conn.execute(
             "UPDATE items SET parent_id = ?, position = ? WHERE id = ?",
             libsql::params![new_parent_id, position, id],

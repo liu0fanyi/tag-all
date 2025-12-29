@@ -14,12 +14,13 @@ mod domain;
 mod repository;
 mod commands;
 
-use repository::{ItemRepository, TagRepository, init_db};
+use repository::{ItemRepository, TagRepository, WindowStateRepository, init_db};
 
 /// Application state shared across commands
 pub struct AppState {
     pub item_repo: Mutex<ItemRepository>,
     pub tag_repo: Mutex<TagRepository>,
+    pub window_repo: Mutex<WindowStateRepository>,
 }
 
 /// Get database path from app handle
@@ -47,11 +48,13 @@ pub fn run() {
                 
                 let item_repo = ItemRepository::new(conn.clone());
                 let tag_repo = TagRepository::new(conn.clone());
+                let window_repo = WindowStateRepository::new(conn.clone());
                 
                 // Store state
                 app_handle.manage(AppState {
                     item_repo: Mutex::new(item_repo),
                     tag_repo: Mutex::new(tag_repo),
+                    window_repo: Mutex::new(window_repo),
                 });
             });
             
@@ -85,6 +88,11 @@ pub fn run() {
             commands::get_tag_parents,
             commands::get_tag_children,
             commands::get_root_tags,
+            commands::move_tag,
+            commands::move_child_tag,
+            // Level 4: Window state
+            commands::save_window_state,
+            commands::load_window_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

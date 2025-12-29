@@ -26,9 +26,11 @@ pub fn App() -> impl IntoView {
 
     // Load items and tags on mount and when trigger changes
     Effect::new(move |_| {
-        let _ = reload_trigger.get();
+        let trigger = reload_trigger.get();
+        web_sys::console::log_1(&format!("[APP] Effect running, trigger={}", trigger).into());
         spawn_local(async move {
             if let Ok(loaded) = commands::list_items().await {
+                web_sys::console::log_1(&format!("[APP] Loaded {} items", loaded.len()).into());
                 set_items.set(loaded);
             }
             if let Ok(loaded) = commands::list_tags().await {

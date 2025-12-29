@@ -56,6 +56,7 @@ pub async fn update_tag(
         id: existing.id,
         name: name.unwrap_or(existing.name),
         color: color.or(existing.color),
+        position: existing.position,
     };
     
     repo.update(&updated).await.map_err(|e| e.to_string())
@@ -165,4 +166,27 @@ pub async fn get_tag_children(
 pub async fn get_root_tags(state: State<'_, AppState>) -> Result<Vec<Tag>, String> {
     let repo = state.tag_repo.lock().await;
     repo.get_root_tags().await.map_err(|e| e.to_string())
+}
+
+/// Move a root tag to a new position
+#[tauri::command]
+pub async fn move_tag(
+    state: State<'_, AppState>,
+    id: u32,
+    position: i32,
+) -> Result<(), String> {
+    let repo = state.tag_repo.lock().await;
+    repo.move_tag(id, position).await.map_err(|e| e.to_string())
+}
+
+/// Move a child tag to a new position under a parent
+#[tauri::command]
+pub async fn move_child_tag(
+    state: State<'_, AppState>,
+    child_tag_id: u32,
+    parent_tag_id: u32,
+    position: i32,
+) -> Result<(), String> {
+    let repo = state.tag_repo.lock().await;
+    repo.move_child_tag(child_tag_id, parent_tag_id, position).await.map_err(|e| e.to_string())
 }

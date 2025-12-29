@@ -163,12 +163,13 @@ impl TagRepository {
     }
 
     /// Get all child tags for a given parent tag (sorted by position)
+    /// Returns tags with position from tag_tags table (child position under this parent)
     pub async fn get_child_tags(&self, parent_tag_id: u32) -> DomainResult<Vec<Tag>> {
         let conn = self.conn.lock().await;
         
         let mut rows = conn
             .query(
-                "SELECT t.id, t.name, t.color FROM tags t
+                "SELECT t.id, t.name, t.color, tt.position FROM tags t
                  JOIN tag_tags tt ON t.id = tt.child_tag_id
                  WHERE tt.parent_tag_id = ?
                  ORDER BY tt.position",
@@ -190,9 +191,9 @@ impl TagRepository {
         
         let mut rows = conn
             .query(
-                "SELECT id, name, color FROM tags 
+                "SELECT id, name, color, position FROM tags 
                  WHERE id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)
-                 ORDER BY name",
+                 ORDER BY position, name",
                 (),
             )
             .await
@@ -203,6 +204,53 @@ impl TagRepository {
             tags.push(row_to_tag(&row)?);
         }
         Ok(tags)
+    }
+    
+    /// Move a root tag to a new position
+    pub async fn move_tag(&self, id: u32, position: i32) -> DomainResult<()> {
+        let conn = self.conn.lock().await;
+        
+        // Shift existing tags at target position down
+        conn.execute(
+            "UPDATE tags SET position = position + 1 WHERE position >= ? AND id != ? AND id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)",
+            libsql::params![position, id],
+        )
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        // Update the tag's position
+        conn.execute(
+            "UPDATE tags SET position = ? WHERE id = ?",
+            libsql::params![position, id],
+        )
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
+    
+    /// Move a child tag to a new position under a specific parent
+    /// This updates the position in tag_tags table
+    pub async fn move_child_tag(&self, child_tag_id: u32, parent_tag_id: u32, position: i32) -> DomainResult<()> {
+        let conn = self.conn.lock().await;
+        
+        // Shift existing children at target position down
+        conn.execute(
+            "UPDATE tag_tags SET position = position + 1 WHERE parent_tag_id = ? AND position >= ? AND child_tag_id != ?",
+            libsql::params![parent_tag_id, position, child_tag_id],
+        )
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        // Update the child's position under this parent
+        conn.execute(
+            "UPDATE tag_tags SET position = ? WHERE child_tag_id = ? AND parent_tag_id = ?",
+            libsql::params![position, child_tag_id, parent_tag_id],
+        )
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        Ok(())
     }
 }
 
@@ -289,5 +337,6 @@ fn row_to_tag(row: &libsql::Row) -> DomainResult<Tag> {
         id: row.get::<u32>(0).map_err(|e| DomainError::Internal(e.to_string()))?,
         name: row.get::<String>(1).map_err(|e| DomainError::Internal(e.to_string()))?,
         color: row.get::<Option<String>>(2).ok().flatten(),
+        position: row.get::<i32>(3).unwrap_or(0),
     })
 }

@@ -174,3 +174,77 @@ pub async fn remove_tag_parent(child_tag_id: u32, parent_tag_id: u32) -> Result<
     let _ = invoke("remove_tag_parent", js_args).await;
     Ok(())
 }
+
+// ========================
+// Level 4: DnD + Window State Commands
+// ========================
+
+#[derive(Serialize)]
+pub struct MoveItemArgs {
+    pub id: u32,
+    #[serde(rename = "newParentId")]
+    pub new_parent_id: Option<u32>,
+    pub position: i32,
+}
+
+pub async fn move_item(id: u32, new_parent_id: Option<u32>, position: i32) -> Result<(), String> {
+    let js_args = serde_wasm_bindgen::to_value(&MoveItemArgs { id, new_parent_id, position }).map_err(|e| e.to_string())?;
+    let _ = invoke("move_item", js_args).await;
+    Ok(())
+}
+
+#[derive(Serialize)]
+pub struct MoveTagArgs {
+    pub id: u32,
+    pub position: i32,
+}
+
+pub async fn move_tag(id: u32, position: i32) -> Result<(), String> {
+    let js_args = serde_wasm_bindgen::to_value(&MoveTagArgs { id, position }).map_err(|e| e.to_string())?;
+    let _ = invoke("move_tag", js_args).await;
+    Ok(())
+}
+
+#[derive(Serialize)]
+pub struct MoveChildTagArgs {
+    #[serde(rename = "childTagId")]
+    pub child_tag_id: u32,
+    #[serde(rename = "parentTagId")]
+    pub parent_tag_id: u32,
+    pub position: i32,
+}
+
+pub async fn move_child_tag(child_tag_id: u32, parent_tag_id: u32, position: i32) -> Result<(), String> {
+    let js_args = serde_wasm_bindgen::to_value(&MoveChildTagArgs { child_tag_id, parent_tag_id, position }).map_err(|e| e.to_string())?;
+    let _ = invoke("move_child_tag", js_args).await;
+    Ok(())
+}
+
+#[derive(Serialize)]
+pub struct WindowStateArgs {
+    pub width: f64,
+    pub height: f64,
+    pub x: f64,
+    pub y: f64,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct WindowState {
+    pub width: f64,
+    pub height: f64,
+    pub x: f64,
+    pub y: f64,
+    pub pinned: bool,
+}
+
+pub async fn save_window_state(width: f64, height: f64, x: f64, y: f64, pinned: bool) -> Result<(), String> {
+    let js_args = serde_wasm_bindgen::to_value(&WindowStateArgs { width, height, x, y, pinned }).map_err(|e| e.to_string())?;
+    let _ = invoke("save_window_state", js_args).await;
+    Ok(())
+}
+
+pub async fn load_window_state() -> Result<Option<WindowState>, String> {
+    let result = invoke("load_window_state", JsValue::NULL).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}

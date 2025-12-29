@@ -1,6 +1,6 @@
 //! Tag Column Component
 //!
-//! Left sidebar displaying tag tree hierarchy with add input.
+//! Left sidebar displaying tag tree hierarchy with add input and DnD support.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -9,6 +9,33 @@ use wasm_bindgen::JsCast;
 use crate::models::Tag;
 use crate::commands::{self, CreateTagArgs};
 use crate::context::AppContext;
+
+use leptos_dragdrop::*;
+
+/// Tag DnD Context - passed to all tag components via Leptos context
+#[derive(Clone, Copy)]
+pub struct TagDndContext {
+    pub dnd: DndSignals,
+    /// The parent tag ID of the currently dragged child (None = root tag)
+    pub dragging_parent_id: ReadSignal<Option<u32>>,
+    set_dragging_parent_id: WriteSignal<Option<u32>>,
+}
+
+impl TagDndContext {
+    pub fn new() -> Self {
+        let (dragging_parent_id, set_dragging_parent_id) = signal(None::<u32>);
+        Self {
+            dnd: create_dnd_signals(),
+            dragging_parent_id,
+            set_dragging_parent_id,
+        }
+    }
+    
+    pub fn start_drag(&self, tag_id: u32, parent_id: Option<u32>) {
+        self.dnd.dragging_id_write.set(Some(tag_id));
+        self.set_dragging_parent_id.set(parent_id);
+    }
+}
 
 /// Tag add input
 #[component]
@@ -51,29 +78,65 @@ fn TagAddInput() -> impl IntoView {
     }
 }
 
-/// Recursive tag tree item
+/// Tag drop zone component
+#[component]
+fn TagDropZone(
+    parent_id: Option<u32>,
+    position: i32,
+) -> impl IntoView {
+    let tag_dnd = use_context::<TagDndContext>().expect("TagDndContext should be provided");
+    let dnd = tag_dnd.dnd;
+    
+    let on_mouseenter = make_on_zone_mouseenter(dnd.clone(), parent_id, position);
+    let on_mouseleave = make_on_mouseleave(dnd.clone());
+    
+    let is_active = move || {
+        matches!(dnd.drop_target_read.get(), Some(DropTarget::Zone(pid, pos)) if pid == parent_id && pos == position)
+    };
+    
+    let is_dragging = move || dnd.dragging_id_read.get().is_some();
+    
+    let zone_class = move || {
+        let mut c = String::from("drop-zone tag-drop-zone");
+        if !is_dragging() { c.push_str(" hidden"); }
+        if is_active() { c.push_str(" active"); }
+        c
+    };
+    
+    view! {
+        <div
+            class=zone_class
+            on:mouseenter=on_mouseenter
+            on:mouseleave=on_mouseleave
+        />
+    }
+}
+
+/// Recursive tag tree item with DnD support
 #[component]
 fn TagTreeNode(
     tag: Tag,
     depth: usize,
+    parent_id: Option<u32>,
     selected_tag: ReadSignal<Option<u32>>,
     set_selected_tag: WriteSignal<Option<u32>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
 ) -> impl IntoView {
     let id = tag.id;
+    let position = tag.position;
     let name = tag.name.clone();
     let color = tag.color.clone().unwrap_or_else(|| "#666".to_string());
     let indent = depth * 16;
     
-    // Load children and parent count
+    let ctx = use_context::<AppContext>().expect("AppContext should be provided");
+    let tag_dnd = use_context::<TagDndContext>().expect("TagDndContext should be provided");
+    let dnd = tag_dnd.dnd;
+    
+    // Load children
     let (children, set_children) = signal(Vec::<Tag>::new());
-    let (parent_count, set_parent_count) = signal(0usize);
     let (expanded, set_expanded) = signal(true);
     
-    let ctx = use_context::<AppContext>().expect("AppContext should be provided");
-    
     Effect::new(move |_| {
-        // Re-run when reload_trigger changes
         let _ = ctx.reload_trigger.get();
         spawn_local(async move {
             if let Ok(child_tags) = commands::get_tag_children(id).await {
@@ -85,21 +148,41 @@ fn TagTreeNode(
     let is_selected = move || selected_tag.get() == Some(id);
     let has_children = move || !children.get().is_empty();
     
-    // Right-click to edit
+    // DnD handlers - use unified make_on_mousedown
+    let on_mousedown = make_on_mousedown(dnd, id);
+    let on_mouseenter = make_on_item_mouseenter(dnd, id);
+    let on_mouseleave = make_on_mouseleave(dnd);
+    
+    let is_dragging = move || dnd.dragging_id_read.get() == Some(id);
+    let is_drop_target = move || {
+        matches!(dnd.drop_target_read.get(), Some(DropTarget::Item(tid)) if tid == id)
+    };
+    
     let on_context_menu = move |ev: web_sys::MouseEvent| {
         ev.prevent_default();
+        set_selected_tag.set(Some(id)); // Also select the tag
         set_editing_target.set(Some(EditTarget::Tag(id, name.clone())));
+    };
+    
+    let row_class = move || {
+        let mut c = String::from("tag-tree-row");
+        if is_selected() { c.push_str(" selected"); }
+        if is_dragging() { c.push_str(" dragging"); }
+        if is_drop_target() { c.push_str(" drop-target"); }
+        c
     };
 
     view! {
         <div class="tag-tree-item">
             <div
-                class=move || if is_selected() { "tag-tree-row selected" } else { "tag-tree-row" }
+                class=row_class
                 style=format!("padding-left: {}px;", indent + 8)
+                on:mousedown=on_mousedown
+                on:mouseenter=on_mouseenter
+                on:mouseleave=on_mouseleave
                 on:click=move |_| set_selected_tag.set(Some(id))
                 on:contextmenu=on_context_menu
             >
-                // Expand/collapse toggle
                 {move || if has_children() {
                     view! {
                         <button
@@ -116,26 +199,41 @@ fn TagTreeNode(
                     view! { <span class="tag-expand-placeholder">"·"</span> }.into_any()
                 }}
                 
-                // Tag color dot
                 <span class="tag-color-dot" style=format!("background-color: {};", color)></span>
+                <span class="tag-tree-name">{format!("[{}] {}", position, tag.name)}</span>
                 
-                // Tag name
-                <span class="tag-tree-name">{tag.name}</span>
+                // Delete button
+                <button
+                    class="tag-delete-btn"
+                    on:click=move |ev| {
+                        ev.stop_propagation();
+                        spawn_local(async move {
+                            let _ = commands::delete_tag(id).await;
+                            ctx.reload();
+                        });
+                    }
+                >
+                    "×"
+                </button>
             </div>
             
-            // Children (recursive)
+            // Children with drop zones
             {move || if expanded.get() {
-                let children_list = children.get();
                 view! {
                     <div class="tag-tree-children">
                         <For
                             each=move || children.get()
-                            key=|child| child.id
+                            key=|child| (child.id, child.position)
                             children=move |child| {
+                                let child_pos = child.position;
                                 view! {
+                                    // Drop zone before this child
+                                    <TagDropZone parent_id=Some(id) position=child_pos />
+                                    
                                     <TagTreeNode
                                         tag=child
                                         depth=depth + 1
+                                        parent_id=Some(id)
                                         selected_tag=selected_tag
                                         set_selected_tag=set_selected_tag
                                         set_editing_target=set_editing_target
@@ -159,7 +257,7 @@ pub enum EditTarget {
     Item(u32, String),
 }
 
-/// Tag column sidebar
+/// Tag column sidebar with DnD
 #[component]
 pub fn TagColumn(
     selected_tag: ReadSignal<Option<u32>>,
@@ -170,7 +268,45 @@ pub fn TagColumn(
     
     let (root_tags, set_root_tags) = signal(Vec::<Tag>::new());
     
-    // Load root tags (tags with no parents)
+    // Create DnD context
+    let tag_dnd = TagDndContext::new();
+    provide_context(tag_dnd);
+    
+    let dnd = tag_dnd.dnd;
+    
+    // Bind global mouseup handler for dropping
+    let ctx_for_drop = ctx;
+    let dragging_parent = tag_dnd.dragging_parent_id;
+    bind_global_mouseup(dnd.clone(), move |dragged_id, target| {
+        let parent_id_when_dragged = dragging_parent.get_untracked();
+        
+        spawn_local(async move {
+            match target {
+                DropTarget::Item(target_tag_id) => {
+                    // Tag dropped on Tag = make dragged tag a child of target tag
+                    if dragged_id != target_tag_id {
+                        web_sys::console::log_1(&format!("[TAG DND] add_tag_parent({}, {})", dragged_id, target_tag_id).into());
+                        let _ = commands::add_tag_parent(dragged_id, target_tag_id).await;
+                    }
+                }
+                DropTarget::Zone(target_parent_id, position) => {
+                    // Determine if this is root tag or child tag
+                    if target_parent_id.is_none() && parent_id_when_dragged.is_none() {
+                        // Root tag moving within root
+                        web_sys::console::log_1(&format!("[TAG DND] move_tag({}, {})", dragged_id, position).into());
+                        let _ = commands::move_tag(dragged_id, position).await;
+                    } else if let Some(parent_id) = target_parent_id {
+                        // Child tag moving within parent
+                        web_sys::console::log_1(&format!("[TAG DND] move_child_tag({}, {}, {})", dragged_id, parent_id, position).into());
+                        let _ = commands::move_child_tag(dragged_id, parent_id, position).await;
+                    }
+                }
+            }
+        });
+        ctx_for_drop.reload();
+    });
+    
+    // Load root tags
     Effect::new(move |_| {
         let _ = ctx.reload_trigger.get();
         spawn_local(async move {
@@ -189,12 +325,17 @@ pub fn TagColumn(
             <div class="tag-tree">
                 <For
                     each=move || root_tags.get()
-                    key=|tag| tag.id
+                    key=|tag| (tag.id, tag.position)
                     children=move |tag| {
+                        let position = tag.position;
                         view! {
+                            // Drop zone before this root tag
+                            <TagDropZone parent_id=None position=position />
+                            
                             <TagTreeNode
                                 tag=tag
                                 depth=0
+                                parent_id=None
                                 selected_tag=selected_tag
                                 set_selected_tag=set_selected_tag
                                 set_editing_target=set_editing_target
