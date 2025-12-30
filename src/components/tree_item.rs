@@ -18,6 +18,8 @@ pub fn TreeItem(
     has_children: bool,
     editing_target: ReadSignal<Option<EditTarget>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
+    memo_editing_target: ReadSignal<Option<EditTarget>>,
+    set_memo_editing_target: WriteSignal<Option<EditTarget>>,
     set_selected_item: WriteSignal<Option<u32>>,
 ) -> impl IntoView {
     // Get context from parent
@@ -40,6 +42,7 @@ pub fn TreeItem(
         let _ = ctx.reload_trigger.get();
         spawn_local(async move {
             if let Ok(tags) = commands::get_item_tags(id).await {
+                // Backend sorts by pinyin
                 set_item_tags.set(tags);
             }
         });
@@ -48,33 +51,49 @@ pub fn TreeItem(
     // Debounce for contextmenu to prevent duplicate events
     let (last_click_time, set_last_click_time) = signal(0f64);
     
-    // Right-click handler - toggle on re-click, also select item
+    // Left-click handler - just select item (no editor)
+    let on_click_for_editor = move |_| {
+        set_selected_item.set(Some(id));
+    };
+    
+    // Right-click handler - opens BOTH properties editor AND memo editor
+    let text_for_click = text_for_menu.clone();
+    let text_for_click2 = text_for_menu.clone();
     let on_context_menu = move |ev: web_sys::MouseEvent| {
         ev.prevent_default();
-        ev.stop_propagation(); // Prevent event bubbling
+        ev.stop_propagation();
         
-        // Debounce: ignore events within 100ms of previous
+        // Debounce: ignore events within 100ms
         let now = js_sys::Date::now();
         let last = last_click_time.get();
         if now - last < 100.0 {
-            web_sys::console::log_1(&format!("[TREE] Item {} debounced ({}ms since last)", id, now - last).into());
             return;
         }
         set_last_click_time.set(now);
         
-        // Select the item
         set_selected_item.set(Some(id));
-        // Check if already editing this item
-        let current_target = editing_target.get();
-        web_sys::console::log_1(&format!("[TREE] Right-click on item {}, current_target: {:?}", id, current_target.as_ref().map(|t| match t { EditTarget::Item(eid, _) => format!("Item({})", eid), EditTarget::Tag(tid, _) => format!("Tag({})", tid) })).into());
         
-        let is_editing_this = matches!(&current_target, Some(EditTarget::Item(eid, _)) if *eid == id);
+        // Check if already editing this item
+        let current = editing_target.get();
+        let is_editing_this = matches!(&current, Some(EditTarget::Item(eid, _)) if *eid == id);
         if is_editing_this {
-            web_sys::console::log_1(&format!("[TREE] Item {} is_editing_this=true, closing editor", id).into());
+            // Close both editors
             set_editing_target.set(None);
+            set_memo_editing_target.set(None);
+            
+            // Shrink window
+            spawn_local(async {
+                let _ = commands::shrink_window(800, 700).await;
+            });
         } else {
-            web_sys::console::log_1(&format!("[TREE] Item {} is_editing_this=false, opening editor", id).into());
-            set_editing_target.set(Some(EditTarget::Item(id, text_for_menu.clone())));
+            // Open both editors
+            set_editing_target.set(Some(EditTarget::Item(id, text_for_click.clone())));
+            set_memo_editing_target.set(Some(EditTarget::Item(id, text_for_click2.clone())));
+            
+            // Expand window
+            spawn_local(async {
+                let _ = commands::resize_window(1800, 700).await;
+            });
         }
     };
     
@@ -96,6 +115,7 @@ pub fn TreeItem(
         <div
             class=move || if completed { "item-row completed" } else { "item-row" }
             style=format!("margin-left: {}px;", indent)
+            on:click=on_click_for_editor
             on:contextmenu=on_context_menu
         >
             // Collapse toggle
@@ -166,12 +186,25 @@ pub fn TreeItem(
             
             // Countdown editable input (only for countdown type)
             {if is_countdown {
+                // Calculate width based on digit count (minimum 2 chars)
+                let char_count = current_count.to_string().len().max(2);
+                let width_style = format!("width: {}ch;", char_count + 1);
+                
                 view! { 
                     <input
                         type="number"
                         class="countdown-inline-input"
+                        style=width_style
                         prop:value=current_count
                         on:click=move |ev: web_sys::MouseEvent| ev.stop_propagation()
+                        on:input=move |ev: web_sys::Event| {
+                            use wasm_bindgen::JsCast;
+                            let target = ev.target().unwrap();
+                            let input = target.dyn_ref::<web_sys::HtmlInputElement>().unwrap();
+                            // Adjust width based on content
+                            let len = input.value().len().max(2);
+                            let _ = input.set_attribute("style", &format!("width: {}ch;", len + 1));
+                        }
                         on:change=move |ev| {
                             use wasm_bindgen::JsCast;
                             ev.stop_propagation();

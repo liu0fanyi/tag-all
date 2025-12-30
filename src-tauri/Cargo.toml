@@ -26,3 +26,4 @@ async-trait = "0.1"
 
 # Database (libsql for Turso cloud sync support)
 libsql = { version = "0.9", features = ["sync"] }
+pinyin = "0.10.0"

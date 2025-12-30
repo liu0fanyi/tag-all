@@ -99,6 +99,8 @@ pub fn run() {
             // Level 4: Window state
             commands::save_window_state,
             commands::load_window_state,
+            commands::resize_window,
+            commands::shrink_window,
             // Level 5: Workspaces
             commands::list_workspaces,
             commands::create_workspace,

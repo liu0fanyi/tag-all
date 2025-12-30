@@ -5,18 +5,38 @@
 use crate::models::Item;
 use std::collections::HashMap;
 
+/// Sort mode for tree flattening
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum TreeSortMode {
+    #[default]
+    Position, // Sort by position field
+    Preserve, // Preserve input order (for pre-sorted items)
+}
+
 /// Render items as indented tree using recursive DFS
 /// Returns (Item, depth) pairs in display order
 pub fn flatten_tree(items: &[Item]) -> Vec<(Item, usize)> {
-    // Build parent -> children map
+    flatten_tree_sorted(items, TreeSortMode::Position)
+}
+
+/// Render items as indented tree with custom sort mode
+pub fn flatten_tree_sorted(items: &[Item], sort_mode: TreeSortMode) -> Vec<(Item, usize)> {
+    // Build parent -> children map, maintaining insertion order
     let mut children_map: HashMap<Option<u32>, Vec<&Item>> = HashMap::new();
     for item in items {
         children_map.entry(item.parent_id).or_default().push(item);
     }
     
-    // Sort children by position
-    for children in children_map.values_mut() {
-        children.sort_by_key(|i| i.position);
+    // Sort children based on mode
+    match sort_mode {
+        TreeSortMode::Position => {
+            for children in children_map.values_mut() {
+                children.sort_by_key(|i| i.position);
+            }
+        }
+        TreeSortMode::Preserve => {
+            // Keep insertion order (already in correct order from pre-sorted input)
+        }
     }
     
     // Recursive helper

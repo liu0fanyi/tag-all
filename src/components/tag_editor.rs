@@ -71,7 +71,7 @@ pub fn TagEditor(
                             set_item_type.set(item.item_type.clone());
                             set_countdown_count.set(item.current_count);
                         }
-                        // Get tags
+                        // Get tags (backend sorts by pinyin)
                         if let Ok(tags) = commands::get_item_tags(id).await {
                             set_current_tags.set(tags);
                         }
@@ -85,6 +85,7 @@ pub fn TagEditor(
                     let id = *id;
                     spawn_local(async move {
                         if let Ok(tags) = commands::get_tag_parents(id).await {
+                            // Backend sorts by pinyin
                             set_current_tags.set(tags);
                         }
                     });

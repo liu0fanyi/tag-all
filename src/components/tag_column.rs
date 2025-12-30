@@ -117,11 +117,12 @@ fn TagDropZone(
 fn TagTreeNode(
     tag: Tag,
     depth: usize,
-    parent_id: Option<u32>,
-    selected_tag: ReadSignal<Option<u32>>,
-    set_selected_tag: WriteSignal<Option<u32>>,
+    #[prop(into)] parent_id: Option<u32>,
+    selected_tags: ReadSignal<Vec<u32>>,
+    set_selected_tags: WriteSignal<Vec<u32>>,
     editing_target: ReadSignal<Option<EditTarget>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
+    set_memo_editing_target: WriteSignal<Option<EditTarget>>,
 ) -> impl IntoView {
     let id = tag.id;
     let position = tag.position;
@@ -146,7 +147,7 @@ fn TagTreeNode(
         });
     });
     
-    let is_selected = move || selected_tag.get() == Some(id);
+    let is_selected = move || selected_tags.get().contains(&id);
     let has_children = move || !children.get().is_empty();
     
     // DnD handlers - use unified make_on_mousedown
@@ -159,16 +160,53 @@ fn TagTreeNode(
         matches!(dnd.drop_target_read.get(), Some(DropTarget::Item(tid)) if tid == id)
     };
     
+    // Left-click handler - toggle tag selection for filtering (shift for multi-select)
+    let on_click = move |ev: web_sys::MouseEvent| {
+        ev.stop_propagation();
+        
+        let shift_held = ev.shift_key();
+        let mut current_tags = selected_tags.get();
+        
+        if shift_held {
+            // Shift+click: toggle this tag in selection
+            if current_tags.contains(&id) {
+                current_tags.retain(|&t| t != id);
+            } else {
+                current_tags.push(id);
+            }
+            set_selected_tags.set(current_tags);
+        } else {
+            // Normal click: single select (or deselect if already only selected)
+            if current_tags == vec![id] {
+                set_selected_tags.set(Vec::new()); // Deselect
+            } else {
+                set_selected_tags.set(vec![id]); // Select only this
+            }
+        }
+    };
+    
+    // Right-click handler - opens properties editor
     let name_for_menu = name.clone();
     let on_context_menu = move |ev: web_sys::MouseEvent| {
         ev.prevent_default();
-        // Toggle on re-click
-        let is_editing_this = matches!(editing_target.get(), Some(EditTarget::Tag(eid, _)) if eid == id);
+        ev.stop_propagation();
+        
+        // Close memo editor (Tags don't have memos)
+        set_memo_editing_target.set(None);
+        
+        // Toggle properties editor
+        let current = editing_target.get();
+        let is_editing_this = matches!(&current, Some(EditTarget::Tag(tid, _)) if *tid == id);
         if is_editing_this {
             set_editing_target.set(None);
+            spawn_local(async {
+                let _ = commands::shrink_window(800, 700).await;
+            });
         } else {
-            set_selected_tag.set(Some(id));
             set_editing_target.set(Some(EditTarget::Tag(id, name_for_menu.clone())));
+            spawn_local(async {
+                let _ = commands::resize_window(1100, 700).await;
+            });
         }
     };
     
@@ -188,7 +226,7 @@ fn TagTreeNode(
                 on:mousedown=on_mousedown
                 on:mouseenter=on_mouseenter
                 on:mouseleave=on_mouseleave
-                on:click=move |_| set_selected_tag.set(Some(id))
+                on:click=on_click
                 on:contextmenu=on_context_menu
             >
                 {move || if has_children() {
@@ -248,10 +286,11 @@ fn TagTreeNode(
                                         tag=child
                                         depth=depth + 1
                                         parent_id=Some(id)
-                                        selected_tag=selected_tag
-                                        set_selected_tag=set_selected_tag
+                                        selected_tags=selected_tags
+                                        set_selected_tags=set_selected_tags
                                         editing_target=editing_target
                                         set_editing_target=set_editing_target
+                                        set_memo_editing_target=set_memo_editing_target
                                     />
                                 }
                             }
@@ -275,10 +314,11 @@ pub enum EditTarget {
 /// Tag column sidebar with DnD
 #[component]
 pub fn TagColumn(
-    selected_tag: ReadSignal<Option<u32>>,
-    set_selected_tag: WriteSignal<Option<u32>>,
+    selected_tags: ReadSignal<Vec<u32>>,
+    set_selected_tags: WriteSignal<Vec<u32>>,
     editing_target: ReadSignal<Option<EditTarget>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
+    set_memo_editing_target: WriteSignal<Option<EditTarget>>,
 ) -> impl IntoView {
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
     
@@ -358,10 +398,11 @@ pub fn TagColumn(
                                 tag=tag
                                 depth=0
                                 parent_id=None
-                                selected_tag=selected_tag
-                                set_selected_tag=set_selected_tag
+                                selected_tags=selected_tags
+                                set_selected_tags=set_selected_tags
                                 editing_target=editing_target
                                 set_editing_target=set_editing_target
+                                set_memo_editing_target=set_memo_editing_target
                             />
                         }
                     }

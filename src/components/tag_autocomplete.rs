@@ -1,6 +1,7 @@
 //! Tag Autocomplete Component
 //!
 //! Reusable tag input with fuzzy search and autocomplete suggestions.
+//! Supports semicolon-separated batch input for pasting multiple tags.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -25,11 +26,25 @@ pub fn fuzzy_match(query: &str, target: &str) -> bool {
     true
 }
 
+/// Get the current search segment (text after the last semicolon)
+fn get_current_segment(input: &str) -> &str {
+    input.rsplit(';').next().unwrap_or("").trim()
+}
+
+/// Replace the current segment (after last semicolon) with a new value
+fn replace_current_segment(input: &str, new_segment: &str) -> String {
+    if let Some(pos) = input.rfind(';') {
+        format!("{}; {}", &input[..pos], new_segment)
+    } else {
+        new_segment.to_string()
+    }
+}
+
 /// Tag autocomplete input with suggestions
 /// 
 /// Props:
 /// - all_tags: Signal containing all available tags for autocomplete
-/// - on_select: Callback when a tag name is submitted
+/// - on_select: Callback when a tag name is submitted (called for EACH tag)
 #[component]
 pub fn TagAutocomplete(
     all_tags: ReadSignal<Vec<Tag>>,
@@ -38,41 +53,67 @@ pub fn TagAutocomplete(
     let (input_value, set_input_value) = signal(String::new());
     let (selected_idx, set_selected_idx) = signal(0usize);
     
-    // Compute suggestions
+    // Compute suggestions based on current segment (after last semicolon)
     let suggestions = move || {
-        let query = input_value.get();
-        if query.is_empty() {
+        let full_input = input_value.get();
+        let current_segment = get_current_segment(&full_input);
+        
+        if current_segment.is_empty() {
             return vec![];
         }
+        
         all_tags.get()
             .into_iter()
-            .filter(|tag| fuzzy_match(&query, &tag.name))
+            .filter(|tag| fuzzy_match(current_segment, &tag.name))
             .take(5)
             .collect::<Vec<_>>()
     };
     
-    // Handle selection
-    let handle_select = move |name: String| {
-        on_select.run(name);
-        set_input_value.set(String::new());
+    // Handle selecting a suggestion - replaces only current segment
+    let handle_suggestion_select = move |name: String| {
+        let full_input = input_value.get();
+        let new_input = replace_current_segment(&full_input, &name);
+        set_input_value.set(new_input);
         set_selected_idx.set(0);
     };
     
-    // Handle form submit
+    // Handle form submit - processes ALL semicolon-separated tags
     let on_submit = move |ev: web_sys::SubmitEvent| {
         ev.prevent_default();
+        let full_input = input_value.get();
+        
+        // Split by semicolon and add each tag
+        let tags: Vec<String> = full_input
+            .split(';')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        
+        // If we have suggestions and the current segment matches, use suggestion
         let sugg = suggestions();
         let sel = selected_idx.get();
         
-        let name = if !sugg.is_empty() && sel < sugg.len() {
-            sugg[sel].name.clone()
-        } else {
-            input_value.get().trim().to_string()
-        };
-        
-        if !name.is_empty() {
-            handle_select(name);
+        for (i, tag_name) in tags.iter().enumerate() {
+            // For the last tag, check if we should use the suggestion
+            let final_name = if i == tags.len() - 1 && !sugg.is_empty() && sel < sugg.len() {
+                // Check if current segment partially matches the suggestion
+                if fuzzy_match(tag_name, &sugg[sel].name) {
+                    sugg[sel].name.clone()
+                } else {
+                    tag_name.clone()
+                }
+            } else {
+                tag_name.clone()
+            };
+            
+            if !final_name.is_empty() {
+                on_select.run(final_name);
+            }
         }
+        
+        // Clear input
+        set_input_value.set(String::new());
+        set_selected_idx.set(0);
     };
     
     // Handle keydown
@@ -86,7 +127,8 @@ pub fn TagAutocomplete(
                 if !sugg.is_empty() {
                     let sel = selected_idx.get();
                     if sel < sugg.len() {
-                        set_input_value.set(sugg[sel].name.clone());
+                        // Replace only the current segment with the suggestion
+                        handle_suggestion_select(sugg[sel].name.clone());
                     }
                 }
             }
@@ -113,7 +155,7 @@ pub fn TagAutocomplete(
             <form class="tag-editor-form" on:submit=on_submit>
                 <input
                     type="text"
-                    placeholder="输入标签名..."
+                    placeholder="输入标签名 (分号分隔多个)..."
                     autocomplete="off"
                     prop:value=move || input_value.get()
                     on:input=move |ev| {
@@ -127,7 +169,7 @@ pub fn TagAutocomplete(
                 <button type="submit">"+"</button>
             </form>
             
-            // Autocomplete suggestions
+            // Autocomplete suggestions (for current segment only)
             {move || {
                 let sugg = suggestions();
                 if sugg.is_empty() {
@@ -146,7 +188,7 @@ pub fn TagAutocomplete(
                                         class=if is_selected { "suggestion-item selected" } else { "suggestion-item" }
                                         on:click=move |ev| {
                                             ev.prevent_default();
-                                            handle_select(name_for_click.clone());
+                                            handle_suggestion_select(name_for_click.clone());
                                         }
                                     >
                                         {name}

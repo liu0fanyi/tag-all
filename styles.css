@@ -138,12 +138,33 @@ button {
 }
 
 .type-selector {
-  padding: 0.6em;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  font-size: 1em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-size: 12px;
   background-color: #ffffff;
   cursor: pointer;
+}
+
+/* Type filter buttons in new item form */
+.type-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-size: 12px;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.type-btn:hover {
+  background-color: #f0f0f0;
+}
+
+.type-btn.active {
+  background-color: #4682b4;
+  color: white;
+  border-color: #4682b4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -240,6 +261,48 @@ button {
 
 .delete-btn:hover {
   background: #e03030;
+}
+
+/* Countdown inline controls */
+.decrement-btn {
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 24px;
+  height: 22px;
+}
+
+.decrement-btn:hover {
+  background: #5a6268;
+}
+
+.countdown-inline-input {
+  min-width: 2ch;
+  padding: 2px 4px;
+  font-size: 12px;
+  text-align: center;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Hide spinner buttons */
+.countdown-inline-input::-webkit-outer-spin-button,
+.countdown-inline-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.countdown-inline-input:focus {
+  outline: none;
+  border-color: #4682b4;
 }
 
 .item-count {
@@ -355,11 +418,13 @@ button {
 .app-layout {
   display: flex;
   height: 100vh;
+  min-width: fit-content;
   overflow: hidden;
 }
 
 .main-content {
   flex: 1;
+  min-width: 400px;
   padding: 20px;
   overflow-y: auto;
   display: flex;
@@ -465,6 +530,85 @@ button {
     background: rgba(255, 255, 255, 0.1);
     color: white;
   }
+}
+
+/* Filter Bar */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(70, 130, 180, 0.1);
+  border-radius: 6px;
+}
+
+.filter-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.filter-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #4682b4;
+  background: transparent;
+  color: #4682b4;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-btn:hover {
+  background: rgba(70, 130, 180, 0.1);
+}
+
+.filter-btn.active {
+  background: #4682b4;
+  color: white;
+}
+
+.filter-clear-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid #dc3545;
+  background: transparent;
+  color: #dc3545;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.filter-clear-btn:hover {
+  background: rgba(220, 53, 69, 0.1);
+}
+
+/* Sort Bar */
+.sort-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sort-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #6c757d;
+  background: transparent;
+  color: #6c757d;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sort-btn:hover {
+  background: rgba(108, 117, 125, 0.1);
+}
+
+.sort-btn.active {
+  background: #6c757d;
+  color: white;
 }
 
 /* Tag Column Sidebar */
@@ -880,4 +1024,309 @@ button {
 /* Cursor styles during drag */
 .tree-view {
   user-select: none;
+}
+
+/* ================================
+   Markdown Editor Styles
+   ================================ */
+
+.markdown-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.markdown-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-btn {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.toolbar-btn.active {
+  background: #4a9eff;
+  color: white;
+}
+
+.markdown-textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 10px;
+  border: none;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.markdown-textarea:focus {
+  outline: none;
+}
+
+.markdown-preview {
+  min-height: 150px;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-y: auto;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3 {
+  margin: 0.5em 0;
+  font-weight: 600;
+}
+
+.markdown-preview h1 {
+  font-size: 1.4em;
+}
+
+.markdown-preview h2 {
+  font-size: 1.2em;
+}
+
+.markdown-preview h3 {
+  font-size: 1.1em;
+}
+
+.markdown-preview p {
+  margin: 0.5em 0;
+}
+
+.markdown-preview code {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-preview pre {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.markdown-preview pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-preview a {
+  color: #4a9eff;
+}
+
+.memo-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (prefers-color-scheme: dark) {
+  .markdown-editor {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .markdown-toolbar {
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .toolbar-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .markdown-textarea {
+    background: rgba(255, 255, 255, 0.05);
+    color: inherit;
+  }
+
+  .markdown-preview code,
+  .markdown-preview pre {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* ================================
+   Memo Editor Column (Side-by-Side)
+   ================================ */
+
+.memo-editor-column {
+  width: 500px;
+  min-width: 400px;
+  background: rgba(0, 0, 0, 0.02);
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.memo-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.memo-editor-title {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memo-editor-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.memo-edit-pane,
+.memo-preview-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.memo-edit-pane {
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.pane-header {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.5;
+  background: rgba(0, 0, 0, 0.03);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+}
+
+.memo-textarea {
+  flex: 1;
+  width: 100%;
+  padding: 10px;
+  border: none;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+  box-sizing: border-box;
+}
+
+.memo-textarea:focus {
+  outline: none;
+}
+
+.memo-preview-content {
+  flex: 1;
+  padding: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-y: auto;
+}
+
+.memo-preview-content h1,
+.memo-preview-content h2,
+.memo-preview-content h3 {
+  margin: 0.5em 0;
+  font-weight: 600;
+}
+
+.memo-preview-content h1 {
+  font-size: 1.4em;
+}
+
+.memo-preview-content h2 {
+  font-size: 1.2em;
+}
+
+.memo-preview-content h3 {
+  font-size: 1.1em;
+}
+
+.memo-preview-content p {
+  margin: 0.5em 0;
+}
+
+.memo-preview-content code {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9em;
+}
+
+.memo-preview-content pre {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.memo-preview-content ul,
+.memo-preview-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .memo-editor-column {
+    background: rgba(255, 255, 255, 0.02);
+    border-left-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .memo-editor-header {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .memo-edit-pane {
+    border-right-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .pane-header {
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .memo-textarea {
+    background: rgba(255, 255, 255, 0.02);
+    color: inherit;
+  }
+
+  .memo-preview-content code,
+  .memo-preview-content pre {
+    background: rgba(255, 255, 255, 0.08);
+  }
 }

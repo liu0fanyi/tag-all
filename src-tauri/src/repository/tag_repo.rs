@@ -52,16 +52,17 @@ impl TagRepository {
         Ok(())
     }
 
-    /// Get all tags for an item
+    /// Get all tags for an item (sorted by pinyin for Chinese)
     pub async fn get_tags_for_item(&self, item_id: u32) -> DomainResult<Vec<Tag>> {
+        use pinyin::ToPinyin;
+        
         let conn = self.conn.lock().await;
         
         let mut rows = conn
             .query(
                 "SELECT t.id, t.name, t.color FROM tags t
                  JOIN item_tags it ON t.id = it.tag_id
-                 WHERE it.item_id = ?
-                 ORDER BY t.name",
+                 WHERE it.item_id = ?",
                 libsql::params![item_id],
             )
             .await
@@ -71,6 +72,24 @@ impl TagRepository {
         while let Ok(Some(row)) = rows.next().await {
             tags.push(row_to_tag(&row)?);
         }
+        
+        // Sort by pinyin for Chinese text
+        tags.sort_by(|a, b| {
+            let a_pinyin: String = a.name.chars()
+                .map(|c| c.to_pinyin().map(|p| p.plain()).unwrap_or_else(|| c.to_string().leak()))
+                .collect::<Vec<_>>()
+                .join("");
+            let b_pinyin: String = b.name.chars()
+                .map(|c| c.to_pinyin().map(|p| p.plain()).unwrap_or_else(|| c.to_string().leak()))
+                .collect::<Vec<_>>()
+                .join("");
+            a_pinyin.cmp(&b_pinyin)
+        });
+        
+        // DEBUG: Print sorted tag names
+        let tag_names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
+        println!("[DEBUG get_tags_for_item {}] Pinyin sorted: {:?}", item_id, tag_names);
+        
         Ok(tags)
     }
 

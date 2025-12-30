@@ -147,3 +147,26 @@ pub async fn set_item_count(id: u32, target_count: Option<i32>) -> Result<Item, 
     serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
 }
 
+/// Update item memo (Markdown content)
+pub async fn update_item_memo(id: u32, memo: Option<&str>) -> Result<Item, String> {
+    // Build JSON with memo field - escape the memo content for JSON
+    let mut json = format!(r#"{{"id":{}"#, id);
+    
+    if let Some(m) = memo {
+        // Escape special JSON characters in memo
+        let escaped = m
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        json.push_str(&format!(r#","memo":"{}""#, escaped));
+    } else {
+        json.push_str(r#","memo":null"#);
+    }
+    json.push('}');
+    
+    let js_args = js_sys::JSON::parse(&json).map_err(|e| format!("JSON parse error: {:?}", e))?;
+    let result = invoke("update_item", js_args).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}

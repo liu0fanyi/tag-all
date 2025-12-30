@@ -8,14 +8,7 @@ use wasm_bindgen::JsCast;
 
 use crate::commands::{self, CreateItemArgs};
 use crate::context::AppContext;
-
-/// Item type options
-const ITEM_TYPES: &[(&str, &str)] = &[
-    ("daily", "循环"),
-    ("once", "一次"),
-    ("countdown", "倒数"),
-    ("document", "文档"),
-];
+use crate::components::type_selector::ITEM_TYPES;
 
 /// Form for creating new items (root or child)
 #[component]
