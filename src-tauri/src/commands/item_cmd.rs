@@ -152,7 +152,6 @@ pub async fn get_descendants(state: State<'_, AppState>, id: u32) -> Result<Vec<
 /// Decrement current_count for countdown items
 #[tauri::command]
 pub async fn decrement_item(state: State<'_, AppState>, id: u32) -> Result<Item, String> {
-    println!("[DECREMENT_ITEM] id={}", id);
     let repo = state.item_repo.lock().await;
     
     let mut item = repo.find_by_id(id).await.map_err(|e| e.to_string())?
@@ -187,4 +186,11 @@ pub async fn set_item_count(state: State<'_, AppState>, id: u32, target_count: O
     }
     
     repo.update(&item).await.map_err(|e| e.to_string())
+}
+
+/// Reset all completed items in a workspace back to incomplete
+#[tauri::command]
+pub async fn reset_all_items(state: State<'_, AppState>, workspace_id: u32) -> Result<u32, String> {
+    let repo = state.item_repo.lock().await;
+    repo.reset_all_completed(workspace_id).await.map_err(|e| e.to_string())
 }

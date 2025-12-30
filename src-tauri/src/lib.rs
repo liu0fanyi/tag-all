@@ -78,6 +78,7 @@ pub fn run() {
             commands::get_descendants,
             commands::decrement_item,
             commands::set_item_count,
+            commands::reset_all_items,
             // Level 3: Tag CRUD + Item-Tag relationships
             commands::create_tag,
             commands::list_tags,
@@ -101,6 +102,9 @@ pub fn run() {
             commands::load_window_state,
             commands::resize_window,
             commands::shrink_window,
+            commands::set_pinned,
+            commands::minimize_window,
+            commands::close_window,
             // Level 5: Workspaces
             commands::list_workspaces,
             commands::create_workspace,

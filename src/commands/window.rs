@@ -62,3 +62,29 @@ pub async fn shrink_window(width: u32, height: u32) -> Result<(), String> {
     let _ = invoke("shrink_window", js_args).await;
     Ok(())
 }
+
+#[derive(Serialize)]
+struct PinnedArgs {
+    pinned: bool,
+}
+
+/// Set window always-on-top state
+pub async fn set_pinned(pinned: bool) -> Result<(), String> {
+    let js_args = serde_wasm_bindgen::to_value(&PinnedArgs { pinned }).map_err(|e| e.to_string())?;
+    let _ = invoke("set_pinned", js_args).await;
+    Ok(())
+}
+
+/// Minimize window
+pub async fn minimize_window() -> Result<(), String> {
+    let _ = invoke("minimize_window", JsValue::NULL).await;
+    Ok(())
+}
+
+/// Close window
+pub async fn close_window() -> Result<(), String> {
+    let _ = invoke("close_window", JsValue::NULL).await;
+    Ok(())
+}
+
+

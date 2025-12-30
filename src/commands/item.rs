@@ -170,3 +170,10 @@ pub async fn update_item_memo(id: u32, memo: Option<&str>) -> Result<Item, Strin
     let result = invoke("update_item", js_args).await;
     serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
 }
+
+/// Reset all completed items in a workspace back to incomplete
+pub async fn reset_all_items(workspace_id: u32) -> Result<u32, String> {
+    let js_args = serde_wasm_bindgen::to_value(&WorkspaceIdArgs { workspace_id }).map_err(|e| e.to_string())?;
+    let result = invoke("reset_all_items", js_args).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}

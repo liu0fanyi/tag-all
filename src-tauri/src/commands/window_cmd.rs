@@ -70,3 +70,27 @@ pub async fn shrink_window(app: AppHandle, width: u32, height: u32) -> Result<()
     
     Ok(())
 }
+
+/// Set window always-on-top state
+#[tauri::command]
+pub async fn set_pinned(app: AppHandle, pinned: bool) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("Window not found")?;
+    window.set_always_on_top(pinned).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Minimize window
+#[tauri::command]
+pub async fn minimize_window(app: AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("Window not found")?;
+    window.minimize().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Close window
+#[tauri::command]
+pub async fn close_window(app: AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("Window not found")?;
+    window.close().map_err(|e| e.to_string())?;
+    Ok(())
+}

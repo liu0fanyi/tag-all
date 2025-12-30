@@ -8,7 +8,7 @@ use leptos::task::spawn_local;
 use crate::models::{Item, Tag, Workspace};
 use crate::commands;
 use crate::context::AppContext;
-use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn};
+use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn, TitleBar};
 
 /// Filter mode for tag-based item filtering
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -48,6 +48,21 @@ pub fn App() -> impl IntoView {
     let (editing_target, set_editing_target) = signal::<Option<EditTarget>>(None);
     // Right-click on Item opens memo editor
     let (memo_editing_target, set_memo_editing_target) = signal::<Option<EditTarget>>(None);
+    
+    // Pin state (always on top)
+    let (is_pinned, set_is_pinned) = signal(false);
+    
+    // Load initial pinned state
+    Effect::new(move |_| {
+        spawn_local(async move {
+            if let Ok(Some(state)) = commands::load_window_state().await {
+                set_is_pinned.set(state.pinned);
+                if state.pinned {
+                    let _ = commands::set_pinned(true).await;
+                }
+            }
+        });
+    });
 
     // Provide context to all children
     provide_context(AppContext::new((reload_trigger, set_reload_trigger), (adding_under, set_adding_under), current_workspace));
@@ -92,26 +107,30 @@ pub fn App() -> impl IntoView {
     };
 
     view! {
-        <div class="app-layout">
-            // Left: Tag Column
-            <TagColumn
-                selected_tags=selected_tags
-                set_selected_tags=set_selected_tags
-                editing_target=editing_target
-                set_editing_target=set_editing_target
-                set_memo_editing_target=set_memo_editing_target
-            />
+        <div class="app-container">
+            // Custom Title Bar
+            <TitleBar is_pinned=is_pinned set_is_pinned=set_is_pinned />
             
-            // Center: Main Content
-            <main class="main-content">
-                // Workspace Tab Bar
-                <WorkspaceTabBar
-                    workspaces=workspaces
-                    current_workspace=current_workspace
-                    set_current_workspace=set_current_workspace
+            <div class="app-layout">
+                // Left: Tag Column
+                <TagColumn
+                    selected_tags=selected_tags
+                    set_selected_tags=set_selected_tags
+                    editing_target=editing_target
+                    set_editing_target=set_editing_target
+                    set_memo_editing_target=set_memo_editing_target
                 />
                 
-                <h1>"Tag-All"</h1>
+                // Center: Main Content
+                <main class="main-content">
+                    // Workspace Tab Bar
+                    <WorkspaceTabBar
+                        workspaces=workspaces
+                        current_workspace=current_workspace
+                        set_current_workspace=set_current_workspace
+                    />
+                    
+                    <h1>"Tag-All"</h1>
                 
                 // Filter mode toggle (shown when tags are selected)
                 <Show when=move || !selected_tags.get().is_empty()>
@@ -151,6 +170,19 @@ pub fn App() -> impl IntoView {
                     >
                         "按标签排序"
                     </button>
+                    <button
+                        class="sort-btn reset"
+                        title="重置所有已完成的任务"
+                        on:click=move |_| {
+                            let ws = current_workspace.get();
+                            spawn_local(async move {
+                                let _ = commands::reset_all_items(ws).await;
+                            });
+                            set_reload_trigger.update(|n| *n += 1);
+                        }
+                    >
+                        "🔄 重置"
+                    </button>
                 </div>
                 
                 <ItemTreeView
@@ -180,6 +212,7 @@ pub fn App() -> impl IntoView {
                 editing_target=memo_editing_target
                 set_editing_target=set_memo_editing_target
             />
+            </div>
         </div>
     }
 }

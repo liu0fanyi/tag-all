@@ -9,6 +9,7 @@ use wasm_bindgen::JsCast;
 use crate::models::Tag;
 use crate::commands::{self, CreateTagArgs};
 use crate::context::AppContext;
+use crate::components::DeleteConfirmButton;
 
 use leptos_dragdrop::*;
 
@@ -248,19 +249,16 @@ fn TagTreeNode(
                 <span class="tag-color-dot" style=format!("background-color: {};", color)></span>
                 <span class="tag-tree-name">{format!("[{}] {}", position, tag.name)}</span>
                 
-                // Delete button
-                <button
-                    class="tag-delete-btn"
-                    on:click=move |ev| {
-                        ev.stop_propagation();
+                // Delete button with confirmation
+                <DeleteConfirmButton
+                    button_class="tag-delete-btn"
+                    on_confirm=move || {
                         spawn_local(async move {
                             let _ = commands::delete_tag(id).await;
                             ctx.reload();
                         });
                     }
-                >
-                    "×"
-                </button>
+                />
             </div>
             
             // Children with drop zones
@@ -341,7 +339,6 @@ pub fn TagColumn(
                 DropTarget::Item(target_tag_id) => {
                     // Tag dropped on Tag = make dragged tag a child of target tag
                     if dragged_id != target_tag_id {
-                        web_sys::console::log_1(&format!("[TAG DND] add_tag_parent({}, {})", dragged_id, target_tag_id).into());
                         let _ = commands::add_tag_parent(dragged_id, target_tag_id).await;
                     }
                 }
@@ -349,11 +346,9 @@ pub fn TagColumn(
                     // Determine if this is root tag or child tag
                     if target_parent_id.is_none() && parent_id_when_dragged.is_none() {
                         // Root tag moving within root
-                        web_sys::console::log_1(&format!("[TAG DND] move_tag({}, {})", dragged_id, position).into());
                         let _ = commands::move_tag(dragged_id, position).await;
                     } else if let Some(parent_id) = target_parent_id {
                         // Child tag moving within parent
-                        web_sys::console::log_1(&format!("[TAG DND] move_child_tag({}, {}, {})", dragged_id, parent_id, position).into());
                         let _ = commands::move_child_tag(dragged_id, parent_id, position).await;
                     }
                 }

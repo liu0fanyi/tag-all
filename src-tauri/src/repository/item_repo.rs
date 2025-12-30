@@ -335,4 +335,34 @@ impl ItemRepository {
         item.position = position;
         Ok(item)
     }
+
+    /// Reset all completed items in a workspace back to incomplete
+    /// Returns the count of items reset
+    pub async fn reset_all_completed(&self, workspace_id: u32) -> DomainResult<u32> {
+        let conn = self.conn.lock().await;
+        
+        // Reset completed flag to false for all completed items in the workspace
+        // Also reset current_count to target_count for countdown items
+        conn.execute(
+            "UPDATE items SET completed = 0, current_count = COALESCE(target_count, current_count) WHERE workspace_id = ? AND completed = 1",
+            libsql::params![workspace_id],
+        )
+        .await
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        // Return the number of affected rows (approximate via a count query)
+        let mut rows = conn
+            .query(
+                "SELECT changes()",
+                (),
+            )
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        if let Ok(Some(row)) = rows.next().await {
+            Ok(row.get::<u32>(0).unwrap_or(0))
+        } else {
+            Ok(0)
+        }
+    }
 }

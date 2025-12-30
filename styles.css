@@ -1330,3 +1330,224 @@ button {
     background: rgba(255, 255, 255, 0.08);
   }
 }
+
+/* Header Row with Pin Button */
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.header-row h1 {
+  margin: 0;
+}
+
+/* Pin Button */
+.pin-btn {
+  padding: 4px 8px;
+  font-size: 16px;
+  background: transparent;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  opacity: 0.5;
+}
+
+.pin-btn:hover {
+  opacity: 0.8;
+  border-color: #4a9eff;
+}
+
+.pin-btn.active {
+  opacity: 1;
+  background: rgba(74, 158, 255, 0.15);
+  border-color: #4a9eff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pin-btn {
+    border-color: #666;
+  }
+}
+
+/* Delete Confirmation Inline */
+.delete-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.delete-confirm-text {
+  color: #dc3545;
+  font-weight: 500;
+  margin-right: 2px;
+}
+
+.confirm-btn,
+.cancel-btn {
+  padding: 2px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.confirm-btn {
+  background: #28a745;
+  color: white;
+}
+
+.confirm-btn:hover {
+  background: #218838;
+}
+
+.cancel-btn {
+  background: #6c757d;
+  color: white;
+}
+
+.cancel-btn:hover {
+  background: #5a6268;
+}
+
+/* App Container with Custom Title Bar */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Custom Title Bar */
+.custom-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  min-height: 32px;
+  background: linear-gradient(to bottom, #3a3a3a, #2d2d2d);
+  padding: 0 8px;
+  user-select: none;
+}
+
+.custom-titlebar.pinned {
+  background: linear-gradient(to bottom, #4a3a5a, #3d2d4d);
+}
+
+.titlebar-drag-region {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  -webkit-app-region: drag;
+}
+
+.titlebar-drag-region.locked {
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
+.lock-icon {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.titlebar-icon {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+.titlebar-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  opacity: 0.9;
+  padding-left: 4px;
+}
+
+.titlebar-controls {
+  display: flex;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 28px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #fff;
+  opacity: 0.7;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+  padding: 0;
+  transition: all 0.15s;
+}
+
+.titlebar-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.titlebar-btn.pin {
+  font-size: 12px;
+}
+
+.titlebar-btn.pin.active {
+  opacity: 1;
+  background: rgba(74, 158, 255, 0.3);
+  color: #4a9eff;
+}
+
+.titlebar-btn.minimize:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.titlebar-btn.close:hover {
+  background: #e81123;
+  opacity: 1;
+}
+
+/* Adjust app-layout to fill remaining space */
+.app-container .app-layout {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Light mode title bar */
+@media (prefers-color-scheme: light) {
+  .custom-titlebar {
+    background: linear-gradient(to bottom, #e0e0e0, #d0d0d0);
+  }
+
+  .titlebar-title {
+    color: #333;
+  }
+
+  .titlebar-btn {
+    color: #333;
+  }
+
+  .titlebar-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  .titlebar-btn.pin.active {
+    background: rgba(74, 158, 255, 0.2);
+  }
+
+  .titlebar-btn.close:hover {
+    color: #fff;
+  }
+}

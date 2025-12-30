@@ -8,7 +8,7 @@ use leptos::task::spawn_local;
 use crate::models::{Item, Tag};
 use crate::commands;
 use crate::context::AppContext;
-use crate::components::EditTarget;
+use crate::components::{EditTarget, DeleteConfirmButton};
 
 /// A single item row in the tree
 #[component]
@@ -228,14 +228,16 @@ pub fn TreeItem(
                 ctx.set_adding_under(Some(id));
             }>"+"</button>
             
-            // Delete button
-            <button class="delete-btn" on:click=move |ev| {
-                ev.stop_propagation();
-                spawn_local(async move {
-                    let _ = commands::delete_item(id).await;
-                    ctx.reload();
-                });
-            }>"×"</button>
+            // Delete button with confirmation
+            <DeleteConfirmButton
+                button_class="delete-btn"
+                on_confirm=move || {
+                    spawn_local(async move {
+                        let _ = commands::delete_item(id).await;
+                        ctx.reload();
+                    });
+                }
+            />
             
             // Tags column (right of delete)
             <div class="item-tags-column">

@@ -86,10 +86,6 @@ impl TagRepository {
             a_pinyin.cmp(&b_pinyin)
         });
         
-        // DEBUG: Print sorted tag names
-        let tag_names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
-        println!("[DEBUG get_tags_for_item {}] Pinyin sorted: {:?}", item_id, tag_names);
-        
         Ok(tags)
     }
 
