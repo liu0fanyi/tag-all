@@ -1,0 +1,468 @@
+   Compiling tag-all v0.1.0 (D:\tag_all\project\tauri-apps\tag-all\src-tauri)
+warning: unused import: `ItemTag`
+  --> src-tauri\src\domain\mod.rs:13:20
+   |
+13 | pub use tag::{Tag, ItemTag};
+   |                    ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `libsql::Connection`
+ --> src-tauri\src\repository\tag\item_tag.rs:6:5
+  |
+6 | use libsql::Connection;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> src-tauri\src\repository\tag\item_tag.rs:7:5
+  |
+7 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex`
+ --> src-tauri\src\repository\tag\item_tag.rs:8:5
+  |
+8 | use tokio::sync::Mutex;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `libsql::Connection`
+ --> src-tauri\src\repository\tag\tag_hierarchy.rs:6:5
+  |
+6 | use libsql::Connection;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> src-tauri\src\repository\tag\tag_hierarchy.rs:7:5
+  |
+7 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex`
+ --> src-tauri\src\repository\tag\tag_hierarchy.rs:8:5
+  |
+8 | use tokio::sync::Mutex;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `libsql::Connection`
+ --> src-tauri\src\repository\tag\tag_positioning.rs:6:5
+  |
+6 | use libsql::Connection;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> src-tauri\src\repository\tag\tag_positioning.rs:7:5
+  |
+7 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex`
+ --> src-tauri\src\repository\tag\tag_positioning.rs:8:5
+  |
+8 | use tokio::sync::Mutex;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `item_tag::ItemTagOperations`
+  --> src-tauri\src\repository\tag\mod.rs:17:9
+   |
+17 | pub use item_tag::ItemTagOperations;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tag_hierarchy::TagHierarchyOperations`
+  --> src-tauri\src\repository\tag\mod.rs:18:9
+   |
+18 | pub use tag_hierarchy::TagHierarchyOperations;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tag_positioning::TagPositioningOperations`
+  --> src-tauri\src\repository\tag\mod.rs:19:9
+   |
+19 | pub use tag_positioning::TagPositioningOperations;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SearchableRepository`
+  --> src-tauri\src\repository\mod.rs:19:51
+   |
+19 | pub use traits::{Repository, HierarchyRepository, SearchableRepository};
+   |                                                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `DbState`
+  --> src-tauri\src\repository\mod.rs:20:23
+   |
+20 | pub use db::{init_db, DbState};
+   |                       ^^^^^^^
+
+warning: unused import: `ItemRepository`
+ --> src-tauri\src\commands\item_cmd.rs:7:58
+  |
+7 | use crate::repository::{Repository, HierarchyRepository, ItemRepository};
+  |                                                          ^^^^^^^^^^^^^^
+
+warning: unused import: `TagRepository`
+ --> src-tauri\src\commands\tag_cmd.rs:7:37
+  |
+7 | use crate::repository::{Repository, TagRepository};
+  |                                     ^^^^^^^^^^^^^
+
+error[E0599]: no method named `add_tag_to_item` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+  --> src-tauri\src\commands\tag_cmd.rs:84:10
+   |
+84 |     repo.add_tag_to_item(item_id, tag_id).await.map_err(|e| e.to_string())
+   |          ^^^^^^^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: there is a method `get_tags_for_item` with a similar name, but with different arguments
+  --> src-tauri\src\repository\tag\item_tag.rs:22:5
+   |
+22 |     async fn get_tags_for_item(&self, item_id: u32) -> DomainResult<Vec<Tag>>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `ItemTagOperations` which provides `add_tag_to_item` is implemented but not in scope; perhaps you want to import it
+   |
+ 5 + use crate::repository::tag::item_tag::ItemTagOperations;
+   |
+
+error[E0282]: type annotations needed
+  --> src-tauri\src\commands\tag_cmd.rs:84:5
+   |
+84 |     repo.add_tag_to_item(item_id, tag_id).await.map_err(|e| e.to_string())
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> src-tauri\src\commands\tag_cmd.rs:84:58
+   |
+84 |     repo.add_tag_to_item(item_id, tag_id).await.map_err(|e| e.to_string())
+   |                                                          ^  - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+84 |     repo.add_tag_to_item(item_id, tag_id).await.map_err(|e: /* Type */| e.to_string())
+   |                                                           ++++++++++++
+
+error[E0599]: no method named `remove_tag_from_item` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+  --> src-tauri\src\commands\tag_cmd.rs:95:10
+   |
+95 |     repo.remove_tag_from_item(item_id, tag_id).await.map_err(|e| e.to_string())
+   |          ^^^^^^^^^^^^^^^^^^^^ method not found in `tokio::sync::MutexGuard<'_, TagRepository>`
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `ItemTagOperations` which provides `remove_tag_from_item` is implemented but not in scope; perhaps you want to import it
+   |
+ 5 + use crate::repository::tag::item_tag::ItemTagOperations;
+   |
+
+error[E0282]: type annotations needed
+  --> src-tauri\src\commands\tag_cmd.rs:95:5
+   |
+95 |     repo.remove_tag_from_item(item_id, tag_id).await.map_err(|e| e.to_string())
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> src-tauri\src\commands\tag_cmd.rs:95:63
+   |
+95 |     repo.remove_tag_from_item(item_id, tag_id).await.map_err(|e| e.to_string())
+   |                                                               ^  - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+95 |     repo.remove_tag_from_item(item_id, tag_id).await.map_err(|e: /* Type */| e.to_string())
+   |                                                                ++++++++++++
+
+error[E0599]: no method named `get_tags_for_item` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:105:10
+    |
+105 |     repo.get_tags_for_item(item_id).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `add_tag_to_item` with a similar name, but with different arguments
+   --> src-tauri\src\repository\tag\item_tag.rs:16:5
+    |
+ 16 |     async fn add_tag_to_item(&self, item_id: u32, tag_id: u32) -> DomainResult<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `ItemTagOperations` which provides `get_tags_for_item` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::item_tag::ItemTagOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:105:5
+    |
+105 |     repo.get_tags_for_item(item_id).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:105:52
+    |
+105 |     repo.get_tags_for_item(item_id).await.map_err(|e| e.to_string())
+    |                                                    ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+105 |     repo.get_tags_for_item(item_id).await.map_err(|e: /* Type */| e.to_string())
+    |                                                     ++++++++++++
+
+error[E0599]: no method named `get_items_with_tag` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:115:10
+    |
+115 |     repo.get_items_with_tag(tag_id).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^^^^^^ method not found in `tokio::sync::MutexGuard<'_, TagRepository>`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `ItemTagOperations` which provides `get_items_with_tag` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::item_tag::ItemTagOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:115:5
+    |
+115 |     repo.get_items_with_tag(tag_id).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:115:52
+    |
+115 |     repo.get_items_with_tag(tag_id).await.map_err(|e| e.to_string())
+    |                                                    ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+115 |     repo.get_items_with_tag(tag_id).await.map_err(|e: /* Type */| e.to_string())
+    |                                                     ++++++++++++
+
+error[E0599]: no method named `add_parent_tag` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:130:10
+    |
+130 |     repo.add_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `get_parent_tags` with a similar name, but with different arguments
+   --> src-tauri\src\repository\tag\tag_hierarchy.rs:22:5
+    |
+ 22 |     async fn get_parent_tags(&self, tag_id: u32) -> DomainResult<Vec<Tag>>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `TagHierarchyOperations` which provides `add_parent_tag` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::tag_hierarchy::TagHierarchyOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:130:5
+    |
+130 |     repo.add_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:130:69
+    |
+130 |     repo.add_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+    |                                                                     ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+130 |     repo.add_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e: /* Type */| e.to_string())
+    |                                                                      ++++++++++++
+
+error[E0599]: no method named `remove_parent_tag` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:141:10
+    |
+141 |     repo.remove_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `TagHierarchyOperations` which provides `remove_parent_tag` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::tag_hierarchy::TagHierarchyOperations;
+    |
+help: there is a method `add_parent_tag` with a similar name
+    |
+141 -     repo.remove_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+141 +     repo.add_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:141:5
+    |
+141 |     repo.remove_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:141:72
+    |
+141 |     repo.remove_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
+    |                                                                        ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+141 |     repo.remove_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e: /* Type */| e.to_string())
+    |                                                                         ++++++++++++
+
+error[E0599]: no method named `get_parent_tags` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:151:10
+    |
+151 |     repo.get_parent_tags(tag_id).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `get_root_tags` with a similar name, but with different arguments
+   --> src-tauri\src\repository\tag\tag_hierarchy.rs:28:5
+    |
+ 28 |     async fn get_root_tags(&self) -> DomainResult<Vec<Tag>>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `TagHierarchyOperations` which provides `get_parent_tags` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::tag_hierarchy::TagHierarchyOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:151:5
+    |
+151 |     repo.get_parent_tags(tag_id).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:151:49
+    |
+151 |     repo.get_parent_tags(tag_id).await.map_err(|e| e.to_string())
+    |                                                 ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+151 |     repo.get_parent_tags(tag_id).await.map_err(|e: /* Type */| e.to_string())
+    |                                                  ++++++++++++
+
+error[E0599]: no method named `get_child_tags` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:161:10
+    |
+161 |     repo.get_child_tags(parent_tag_id).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^^ method not found in `tokio::sync::MutexGuard<'_, TagRepository>`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `TagHierarchyOperations` which provides `get_child_tags` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::tag_hierarchy::TagHierarchyOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:161:5
+    |
+161 |     repo.get_child_tags(parent_tag_id).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:161:55
+    |
+161 |     repo.get_child_tags(parent_tag_id).await.map_err(|e| e.to_string())
+    |                                                       ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+161 |     repo.get_child_tags(parent_tag_id).await.map_err(|e: /* Type */| e.to_string())
+    |                                                        ++++++++++++
+
+error[E0599]: no method named `get_root_tags` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:168:10
+    |
+168 |     repo.get_root_tags().await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `get_parent_tags` with a similar name, but with different arguments
+   --> src-tauri\src\repository\tag\tag_hierarchy.rs:22:5
+    |
+ 22 |     async fn get_parent_tags(&self, tag_id: u32) -> DomainResult<Vec<Tag>>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `TagHierarchyOperations` which provides `get_root_tags` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::tag_hierarchy::TagHierarchyOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:168:5
+    |
+168 |     repo.get_root_tags().await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:168:41
+    |
+168 |     repo.get_root_tags().await.map_err(|e| e.to_string())
+    |                                         ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+168 |     repo.get_root_tags().await.map_err(|e: /* Type */| e.to_string())
+    |                                          ++++++++++++
+
+error[E0599]: no method named `move_tag` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:179:10
+    |
+179 |     repo.move_tag(id, position).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `move_child_tag` with a similar name, but with different arguments
+   --> src-tauri\src\repository\tag\tag_positioning.rs:22:5
+    |
+ 22 |     async fn move_child_tag(&self, child_tag_id: u32, parent_tag_id: u32, position: i32) -> DomainResult<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `TagPositioningOperations` which provides `move_tag` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::tag_positioning::TagPositioningOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:179:5
+    |
+179 |     repo.move_tag(id, position).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:179:48
+    |
+179 |     repo.move_tag(id, position).await.map_err(|e| e.to_string())
+    |                                                ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+179 |     repo.move_tag(id, position).await.map_err(|e: /* Type */| e.to_string())
+    |                                                 ++++++++++++
+
+error[E0599]: no method named `move_child_tag` found for struct `tokio::sync::MutexGuard<'_, TagRepository>` in the current scope
+   --> src-tauri\src\commands\tag_cmd.rs:191:10
+    |
+191 |     repo.move_child_tag(child_tag_id, parent_tag_id, position).await.map_err(|e| e.to_string())
+    |          ^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `move_tag` with a similar name, but with different arguments
+   --> src-tauri\src\repository\tag\tag_positioning.rs:16:5
+    |
+ 16 |     async fn move_tag(&self, id: u32, new_position: i32) -> DomainResult<()>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: trait `TagPositioningOperations` which provides `move_child_tag` is implemented but not in scope; perhaps you want to import it
+    |
+  5 + use crate::repository::tag::tag_positioning::TagPositioningOperations;
+    |
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:191:5
+    |
+191 |     repo.move_child_tag(child_tag_id, parent_tag_id, position).await.map_err(|e| e.to_string())
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> src-tauri\src\commands\tag_cmd.rs:191:79
+    |
+191 |     repo.move_child_tag(child_tag_id, parent_tag_id, position).await.map_err(|e| e.to_string())
+    |                                                                               ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+191 |     repo.move_child_tag(child_tag_id, parent_tag_id, position).await.map_err(|e: /* Type */| e.to_string())
+    |                                                                                ++++++++++++
+
+Some errors have detailed explanations: E0282, E0599.
+For more information about an error, try `rustc --explain E0282`.
+warning: `tag-all` (lib) generated 17 warnings
+error: could not compile `tag-all` (lib) due to 33 previous errors; 17 warnings emitted

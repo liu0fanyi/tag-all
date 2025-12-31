@@ -5,6 +5,7 @@
 use tauri::State;
 use crate::domain::Tag;
 use crate::repository::{Repository, TagRepository};
+use crate::repository::tag::{ItemTagOperations, TagHierarchyOperations, TagPositioningOperations};
 use crate::AppState;
 
 /// Create a new tag
