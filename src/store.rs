@@ -63,7 +63,13 @@ pub fn store_add_tag(store: &AppStore, tag: Tag) {
 
 /// Update a tag in the store by ID
 pub fn store_update_tag(store: &AppStore, updated_tag: Tag) {
+    // Update in tags list
     store.tags().write().iter_mut()
+        .find(|tag| tag.id == updated_tag.id)
+        .map(|tag| *tag = updated_tag.clone());
+    
+    // Also update in root_tags if it exists there
+    store.root_tags().write().iter_mut()
         .find(|tag| tag.id == updated_tag.id)
         .map(|tag| *tag = updated_tag);
 }

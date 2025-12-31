@@ -9,7 +9,7 @@ use wasm_bindgen::JsCast;
 use crate::models::Tag;
 use crate::commands::{self, CreateTagArgs};
 use crate::context::AppContext;
-use crate::components::tag_column::EditTarget;
+use crate::components::EditTarget;
 use crate::components::type_selector::TypeSelector;
 use crate::components::tag_autocomplete::TagAutocomplete;
 use crate::store::{use_app_store, store_update_item, store_update_tag, AppStateStoreFields};
@@ -117,6 +117,8 @@ pub fn TagEditor(
                 EditTarget::Tag(id, _) => {
                     if let Ok(updated) = commands::update_tag(*id, Some(&name), None).await {
                         store_update_tag(&store, updated);
+                        // Increment version to trigger child tag reload in TagTreeNode
+                        *store.tags_relation_version().write() += 1;
                     }
                 }
             }

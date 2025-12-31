@@ -10,6 +10,7 @@ use crate::models::Tag;
 use crate::commands::{self, CreateTagArgs};
 use crate::context::AppContext;
 use crate::components::DeleteConfirmButton;
+use crate::components::EditTarget;
 use crate::store::{use_app_store, store_remove_tag, AppStateStoreFields};
 
 use leptos_dragdrop::*;
@@ -284,11 +285,8 @@ fn TagTreeNode(
                         <For
                             each=move || children.get()
                             key=|child| {
-                                use std::collections::hash_map::DefaultHasher;
-                                use std::hash::{Hash, Hasher};
-                                let mut h = DefaultHasher::new();
-                                child.name.hash(&mut h);
-                                (child.id, h.finish())
+                                // Include position and name in key so component re-renders when they change
+                                (child.id, child.position, child.name.clone())
                             }
                             children=move |child| {
                                 let child_pos = child.position;
@@ -316,13 +314,6 @@ fn TagTreeNode(
             }}
         </div>
     }
-}
-
-/// Edit target type
-#[derive(Clone, Debug)]
-pub enum EditTarget {
-    Tag(u32, String),
-    Item(u32, String),
 }
 
 /// Tag column sidebar with DnD
@@ -397,8 +388,8 @@ pub fn TagColumn(
                 <For
                     each=move || store.root_tags().get()
                     key=|tag| {
-                        // Include position in key so component re-renders when position changes
-                        (tag.id, tag.position)
+                        // Include position and name in key so component re-renders when they change
+                        (tag.id, tag.position, tag.name.clone())
                     }
                     children=move |tag| {
                         let position = tag.position;
