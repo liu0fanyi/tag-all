@@ -145,97 +145,6 @@ warning: unused import: `TagRepository`
 7 | use crate::repository::{Repository, TagRepository};
   |                                     ^^^^^^^^^^^^^
 
-error[E0609]: no field `workspace_id` on type `&'life1 Item`
-  --> src-tauri\src\repository\item\item_repo.rs:33:51
-   |
-33 |         self.create_with_workspace(entity, entity.workspace_id).await
-   |                                                   ^^^^^^^^^^^^ unknown field
-   |
-   = note: available fields are: `id`, `text`, `completed`, `item_type`, `memo` ... and 5 others
-
-error[E0609]: no field `done` on type `&'life1 Item`
-  --> src-tauri\src\repository\item\item_repo.rs:79:27
-   |
-79 |                 if entity.done { 1 } else { 0 },
-   |                           ^^^^ unknown field
-   |
-   = note: available fields are: `id`, `text`, `completed`, `item_type`, `memo` ... and 5 others
-
-error[E0609]: no field `start_date` on type `&'life1 Item`
-  --> src-tauri\src\repository\item\item_repo.rs:85:24
-   |
-85 |                 entity.start_date.clone(),
-   |                        ^^^^^^^^^^ unknown field
-   |
-   = note: available fields are: `id`, `text`, `completed`, `item_type`, `memo` ... and 5 others
-
-error[E0282]: type annotations needed
-  --> src-tauri\src\repository\item\item_repo.rs:75:9
-   |
-75 | / ...   conn.execute(
-76 | | ...       "UPDATE items SET text = ?, done = ?, item_type = ?, parent_id = ?, position = ?, collapsed = ?, current_count = ?, star...
-77 | | ...       libsql::params![
-78 | | ...           entity.text.clone(),
-...  |
-89 | | ...   .await
-   | |____________^ cannot infer type
-
-error[E0282]: type annotations needed
-  --> src-tauri\src\repository\item\item_repo.rs:90:19
-   |
-90 |         .map_err(|e| DomainError::Internal(e.to_string()))?;
-   |                   ^                        - type must be known at this point
-   |
-help: consider giving this closure parameter an explicit type
-   |
-90 |         .map_err(|e: /* Type */| DomainError::Internal(e.to_string()))?;
-   |                    ++++++++++++
-
-error[E0560]: struct `Item` has no field named `done`
-   --> src-tauri\src\repository\item\item_repo.rs:129:9
-    |
-129 |         done: row.get::<i32>(2).map_err(|e| DomainError::Internal(e.to_string()))? != 0,
-    |         ^^^^ `Item` does not have this field
-    |
-    = note: available fields are: `completed`, `memo`, `target_count`
-
-error[E0560]: struct `Item` has no field named `workspace_id`
-   --> src-tauri\src\repository\item\item_repo.rs:132:9
-    |
-132 |         workspace_id: row.get::<u32>(5).unwrap_or(1),
-    |         ^^^^^^^^^^^^ `Item` does not have this field
-    |
-    = note: available fields are: `completed`, `memo`, `target_count`
-
-error[E0308]: mismatched types
-   --> src-tauri\src\repository\item\item_repo.rs:135:24
-    |
-135 |         current_count: row.get::<i32>(8).ok(),
-    |                        ^^^^^^^^^^^^^^^^^^^^^^ expected `i32`, found `Option<i32>`
-    |
-    = note: expected type `i32`
-               found enum `std::option::Option<i32>`
-help: consider using `Option::expect` to unwrap the `std::option::Option<i32>` value, panicking if the value is an `Option::None`
-    |
-135 |         current_count: row.get::<i32>(8).ok().expect("REASON"),
-    |                                              +++++++++++++++++
-
-error[E0560]: struct `Item` has no field named `start_date`
-   --> src-tauri\src\repository\item\item_repo.rs:136:9
-    |
-136 |         start_date: row.get::<Option<String>>(9).ok().flatten(),
-    |         ^^^^^^^^^^ `Item` does not have this field
-    |
-    = note: available fields are: `completed`, `memo`, `target_count`
-
-error[E0560]: struct `Item` has no field named `created_at`
-   --> src-tauri\src\repository\item\item_repo.rs:137:9
-    |
-137 |         created_at: row.get::<Option<String>>(10).ok().flatten(),
-    |         ^^^^^^^^^^ `Item` does not have this field
-    |
-    = note: available fields are: `completed`, `memo`, `target_count`
-
 error[E0609]: no field `done` on type `&'life1 Item`
   --> src-tauri\src\repository\item\item_workspace.rs:74:27
    |
@@ -288,7 +197,7 @@ warning: unused import: `HierarchyRepository`
 7 | use crate::repository::{Repository, HierarchyRepository, ItemRepository};
   |                                     ^^^^^^^^^^^^^^^^^^^
 
-Some errors have detailed explanations: E0282, E0308, E0560, E0609.
+Some errors have detailed explanations: E0282, E0609.
 For more information about an error, try `rustc --explain E0282`.
 warning: `tag-all` (lib) generated 25 warnings
-error: could not compile `tag-all` (lib) due to 15 previous errors; 25 warnings emitted
+error: could not compile `tag-all` (lib) due to 5 previous errors; 25 warnings emitted

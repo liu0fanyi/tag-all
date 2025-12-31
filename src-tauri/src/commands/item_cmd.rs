@@ -5,6 +5,7 @@
 use tauri::State;
 use crate::domain::{Item, ItemType};
 use crate::repository::{Repository, HierarchyRepository, ItemRepository};
+use crate::repository::item::{ItemHierarchyOperations, ItemWorkspaceOperations};
 use crate::AppState;
 
 /// Create a new item

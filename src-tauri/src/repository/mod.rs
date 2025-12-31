@@ -4,7 +4,7 @@
 
 pub mod db;
 pub mod traits;
-pub mod item_repo;
+pub mod item;
 pub mod tag;
 pub mod window_state_repo;
 pub mod workspace_repo;
@@ -12,7 +12,7 @@ pub mod workspace_repo;
 #[cfg(test)]
 mod tests;
 
-pub use item_repo::ItemRepository;
+pub use item::ItemRepository;
 pub use tag::TagRepository;
 pub use window_state_repo::{WindowStateRepository, WindowState};
 pub use workspace_repo::WorkspaceRepository;
