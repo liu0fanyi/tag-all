@@ -3,9 +3,6 @@
 //! Operations for managing the many-to-many relationship between items and tags.
 
 use async_trait::async_trait;
-use libsql::Connection;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::domain::{Tag, DomainError, DomainResult};
 

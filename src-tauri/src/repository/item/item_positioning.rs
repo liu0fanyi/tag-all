@@ -3,9 +3,6 @@
 //! Operations for managing item positions within their parent hierarchy.
 
 use async_trait::async_trait;
-use libsql::Connection;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::domain::{DomainError, DomainResult};
 

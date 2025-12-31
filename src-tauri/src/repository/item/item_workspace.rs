@@ -3,9 +3,6 @@
 //! Operations for managing items within specific workspaces.
 
 use async_trait::async_trait;
-use libsql::Connection;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::domain::{Item, DomainError, DomainResult};
 

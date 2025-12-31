@@ -3,9 +3,6 @@
 //! Operations for managing parent-child relationships between tags (tag_tags table).
 
 use async_trait::async_trait;
-use libsql::Connection;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::domain::{Tag, DomainError, DomainResult};
 
@@ -144,10 +141,7 @@ impl TagHierarchyOperations for super::tag_repo::TagRepository {
         while let Ok(Some(row)) = rows.next().await {
             tags.push(super::tag_repo::row_to_tag(&row)?);
         }
-        println!("[get_root_tags] Returning {} tags:", tags.len());
-        for t in &tags {
-            println!("  - id={}, name={}, position={}", t.id, t.name, t.position);
-        }
+        
         Ok(tags)
     }
 }

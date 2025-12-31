@@ -16,5 +16,5 @@ pub use item::ItemRepository;
 pub use tag::TagRepository;
 pub use window_state_repo::{WindowStateRepository, WindowState};
 pub use workspace_repo::WorkspaceRepository;
-pub use traits::{Repository, HierarchyRepository, SearchableRepository};
-pub use db::{init_db, DbState};
+pub use traits::{Repository, HierarchyRepository};
+pub use db::init_db;

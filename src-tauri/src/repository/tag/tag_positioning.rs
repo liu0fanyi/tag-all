@@ -3,9 +3,6 @@
 //! Operations for managing tag positions in both tags table and tag_tags table.
 
 use async_trait::async_trait;
-use libsql::Connection;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 use crate::domain::{DomainError, DomainResult};
 
@@ -25,7 +22,6 @@ pub trait TagPositioningOperations {
 #[async_trait]
 impl TagPositioningOperations for super::tag_repo::TagRepository {
     async fn move_tag(&self, id: u32, new_position: i32) -> DomainResult<()> {
-        println!("[move_tag] Called with id={}, new_position={}", id, new_position);
         let conn = self.conn.lock().await;
         
         // Get old position
@@ -37,48 +33,38 @@ impl TagPositioningOperations for super::tag_repo::TagRepository {
         let old_position: i32 = if let Ok(Some(row)) = rows.next().await {
             row.get::<i32>(0).unwrap_or(0)
         } else {
-            println!("[move_tag] Tag {} not found!", id);
             return Err(DomainError::NotFound(format!("Tag {} not found", id)));
         };
         
-        println!("[move_tag] old_position={}, new_position={}", old_position, new_position);
-        
         if old_position == new_position {
-            println!("[move_tag] Same position, skipping");
             return Ok(());
         }
         
         if new_position < old_position {
             // Moving up: shift tags in [new_position, old_position) down by +1
-            println!("[move_tag] Moving UP: shifting [{}, {}) by +1", new_position, old_position);
-            let rows = conn.execute(
+            conn.execute(
                 "UPDATE tags SET position = position + 1 WHERE position >= ? AND position < ? AND id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)",
                 libsql::params![new_position, old_position],
             )
             .await
             .map_err(|e| DomainError::Internal(e.to_string()))?;
-            println!("[move_tag] Shifted {} rows", rows);
         } else {
             // Moving down: shift tags in (old_position, new_position] up by -1
-            println!("[move_tag] Moving DOWN: shifting ({}, {}] by -1", old_position, new_position);
-            let rows = conn.execute(
+            conn.execute(
                 "UPDATE tags SET position = position - 1 WHERE position > ? AND position <= ? AND id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)",
                 libsql::params![old_position, new_position],
             )
             .await
             .map_err(|e| DomainError::Internal(e.to_string()))?;
-            println!("[move_tag] Shifted {} rows", rows);
         }
         
         // Update the tag's position
-        println!("[move_tag] Setting tag {} position to {}", id, new_position);
-        let rows = conn.execute(
+        conn.execute(
             "UPDATE tags SET position = ? WHERE id = ?",
             libsql::params![new_position, id],
         )
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
-        println!("[move_tag] Updated {} rows", rows);
         
         // Drop conn before calling reindex (which also needs conn)
         drop(conn);
@@ -86,7 +72,6 @@ impl TagPositioningOperations for super::tag_repo::TagRepository {
         // Reindex all root tag positions to ensure no gaps or duplicates
         self.reindex_root_tags().await?;
 
-        println!("[move_tag] Done");
         Ok(())
     }
     
@@ -121,7 +106,6 @@ impl TagPositioningOperations for super::tag_repo::TagRepository {
             .map_err(|e| DomainError::Internal(e.to_string()))?;
         }
         
-        println!("[reindex_root_tags] Reindexed {} root tags", ids.len());
         Ok(())
     }
     
