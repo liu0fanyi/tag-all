@@ -12,6 +12,7 @@ use crate::context::AppContext;
 use crate::components::tag_column::EditTarget;
 use crate::components::type_selector::TypeSelector;
 use crate::components::tag_autocomplete::TagAutocomplete;
+use crate::store::{use_app_store, store_update_item, store_update_tag, AppStateStoreFields};
 
 /// Tag editor column (third column)
 #[component]
@@ -20,6 +21,7 @@ pub fn TagEditor(
     set_editing_target: WriteSignal<Option<EditTarget>>,
 ) -> impl IntoView {
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
+    let store = use_app_store();
     
     // Name editing
     let (name_value, set_name_value) = signal(String::new());
@@ -108,13 +110,16 @@ pub fn TagEditor(
         spawn_local(async move {
             match &target {
                 EditTarget::Item(id, _) => {
-                    let _ = commands::update_item(*id, Some(&name), None).await;
+                    if let Ok(updated) = commands::update_item(*id, Some(&name), None).await {
+                        store_update_item(&store, updated);
+                    }
                 }
                 EditTarget::Tag(id, _) => {
-                    let _ = commands::update_tag(*id, Some(&name), None).await;
+                    if let Ok(updated) = commands::update_tag(*id, Some(&name), None).await {
+                        store_update_tag(&store, updated);
+                    }
                 }
             }
-            ctx.reload();
         });
     };
     
@@ -123,8 +128,9 @@ pub fn TagEditor(
         let target = editing_target.get();
         if let Some(EditTarget::Item(id, _)) = target {
             spawn_local(async move {
-                let _ = commands::update_item(id, None, Some(&new_type)).await;
-                ctx.reload();
+                if let Ok(updated) = commands::update_item(id, None, Some(&new_type)).await {
+                    store_update_item(&store, updated);
+                }
             });
         }
     };
@@ -140,10 +146,10 @@ pub fn TagEditor(
         spawn_local(async move {
             // First try to find existing tag by name
             let all = commands::list_tags().await.unwrap_or_default();
-            let existing = all.iter().find(|t| t.name.to_lowercase() == name.to_lowercase());
+            let existing = all.iter().find(|t| t.name.to_lowercase() == name.to_lowercase()).cloned();
             
-            let tag_id = if let Some(tag) = existing {
-                tag.id
+            let tag = if let Some(tag) = existing {
+                tag
             } else {
                 // Create new tag
                 let args = CreateTagArgs {
@@ -151,7 +157,11 @@ pub fn TagEditor(
                     color: None,
                 };
                 match commands::create_tag(&args).await {
-                    Ok(new_tag) => new_tag.id,
+                    Ok(new_tag) => {
+                        // Also add to store.root_tags for TagColumn
+                        store.root_tags().write().push(new_tag.clone());
+                        new_tag
+                    }
                     Err(_) => return,
                 }
             };
@@ -159,16 +169,27 @@ pub fn TagEditor(
             // Link tag to target
             match &target {
                 EditTarget::Item(id, _) => {
-                    let _ = commands::add_item_tag(*id, tag_id).await;
+                    let _ = commands::add_item_tag(*id, tag.id).await;
                 }
                 EditTarget::Tag(id, _) => {
-                    if *id != tag_id {
-                        let _ = commands::add_tag_parent(*id, tag_id).await;
+                    if *id != tag.id {
+                        let _ = commands::add_tag_parent(*id, tag.id).await;
+                        // Refetch root_tags since tag hierarchy changed
+                        if let Ok(loaded) = commands::get_root_tags().await {
+                            *store.root_tags().write() = loaded;
+                        }
                     }
                 }
             }
             
-            ctx.reload();
+            // Fine-grained update: push to local current_tags
+            set_current_tags.update(|tags| {
+                if !tags.iter().any(|t| t.id == tag.id) {
+                    tags.push(tag);
+                }
+            });
+            // Trigger tag child reload
+            *store.tags_relation_version().write() += 1;
         });
     };
     
@@ -185,9 +206,18 @@ pub fn TagEditor(
                 }
                 EditTarget::Tag(id, _) => {
                     let _ = commands::remove_tag_parent(*id, tag_id).await;
+                    // Refetch root_tags since tag hierarchy changed
+                    if let Ok(loaded) = commands::get_root_tags().await {
+                        *store.root_tags().write() = loaded;
+                    }
                 }
             }
-            ctx.reload();
+            // Fine-grained update: remove from local current_tags
+            set_current_tags.update(|tags| {
+                tags.retain(|t| t.id != tag_id);
+            });
+            // Trigger tag child reload
+            *store.tags_relation_version().write() += 1;
         });
     };
     
@@ -281,8 +311,9 @@ pub fn TagEditor(
                                                     // Save to backend
                                                     if let Some(id) = target_id {
                                                         spawn_local(async move {
-                                                            let _ = commands::set_item_count(id, Some(value)).await;
-                                                            ctx.reload();
+                                                            if let Ok(updated) = commands::set_item_count(id, Some(value)).await {
+                                                                store_update_item(&store, updated);
+                                                            }
                                                         });
                                                     }
                                                 }

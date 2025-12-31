@@ -4,6 +4,7 @@ mod models;
 mod commands;
 mod tree;
 mod context;
+mod store;
 mod components;
 mod app;
 

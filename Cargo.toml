@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # Leptos 0.8 (matching workspace version)
 leptos = { version = "0.8", features = ["csr"] }
+reactive_stores = "0.2"
 
 # WASM bindings
 wasm-bindgen = "0.2"

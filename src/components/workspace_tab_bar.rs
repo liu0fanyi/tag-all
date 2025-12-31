@@ -7,15 +7,17 @@ use leptos::task::spawn_local;
 use crate::models::Workspace;
 use crate::commands;
 use crate::context::AppContext;
+use crate::store::{use_app_store, AppStateStoreFields};
 
 /// Workspace Tab Bar component
 #[component]
 pub fn WorkspaceTabBar(
-    workspaces: ReadSignal<Vec<Workspace>>,
+    workspaces: Memo<Vec<Workspace>>,
     current_workspace: ReadSignal<u32>,
     set_current_workspace: WriteSignal<u32>,
 ) -> impl IntoView {
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
+    let store = use_app_store();
     let (adding, set_adding) = signal(false);
     let (new_name, set_new_name) = signal(String::new());
     
@@ -25,8 +27,9 @@ pub fn WorkspaceTabBar(
         if name.is_empty() { return; }
         
         spawn_local(async move {
-            if let Ok(_ws) = commands::create_workspace(&name).await {
-                ctx.reload();
+            if let Ok(new_ws) = commands::create_workspace(&name).await {
+                // Fine-grained update: push new workspace to store
+                store.workspaces().write().push(new_ws);
             }
         });
         

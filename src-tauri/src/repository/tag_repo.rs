@@ -137,6 +137,10 @@ impl TagRepository {
         )
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        // Drop conn and reindex root tags since a tag was removed from root
+        drop(conn);
+        self.reindex_root_tags().await?;
 
         Ok(())
     }
@@ -151,6 +155,10 @@ impl TagRepository {
         )
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        // Drop conn and reindex root tags since a tag was added back to root
+        drop(conn);
+        self.reindex_root_tags().await?;
 
         Ok(())
     }
@@ -218,29 +226,113 @@ impl TagRepository {
         while let Ok(Some(row)) = rows.next().await {
             tags.push(row_to_tag(&row)?);
         }
+        println!("[get_root_tags] Returning {} tags:", tags.len());
+        for t in &tags {
+            println!("  - id={}, name={}, position={}", t.id, t.name, t.position);
+        }
         Ok(tags)
     }
     
     /// Move a root tag to a new position
-    pub async fn move_tag(&self, id: u32, position: i32) -> DomainResult<()> {
+    pub async fn move_tag(&self, id: u32, new_position: i32) -> DomainResult<()> {
+        println!("[move_tag] Called with id={}, new_position={}", id, new_position);
         let conn = self.conn.lock().await;
         
-        // Shift existing tags at target position down
-        conn.execute(
-            "UPDATE tags SET position = position + 1 WHERE position >= ? AND id != ? AND id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)",
-            libsql::params![position, id],
-        )
-        .await
-        .map_err(|e| DomainError::Internal(e.to_string()))?;
+        // Get old position
+        let mut rows = conn
+            .query("SELECT position FROM tags WHERE id = ?", libsql::params![id])
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        let old_position: i32 = if let Ok(Some(row)) = rows.next().await {
+            row.get::<i32>(0).unwrap_or(0)
+        } else {
+            println!("[move_tag] Tag {} not found!", id);
+            return Err(DomainError::NotFound(format!("Tag {} not found", id)));
+        };
+        
+        println!("[move_tag] old_position={}, new_position={}", old_position, new_position);
+        
+        if old_position == new_position {
+            println!("[move_tag] Same position, skipping");
+            return Ok(());
+        }
+        
+        if new_position < old_position {
+            // Moving up: shift tags in [new_position, old_position) down by +1
+            println!("[move_tag] Moving UP: shifting [{}, {}) by +1", new_position, old_position);
+            let rows = conn.execute(
+                "UPDATE tags SET position = position + 1 WHERE position >= ? AND position < ? AND id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)",
+                libsql::params![new_position, old_position],
+            )
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+            println!("[move_tag] Shifted {} rows", rows);
+        } else {
+            // Moving down: shift tags in (old_position, new_position] up by -1
+            println!("[move_tag] Moving DOWN: shifting ({}, {}] by -1", old_position, new_position);
+            let rows = conn.execute(
+                "UPDATE tags SET position = position - 1 WHERE position > ? AND position <= ? AND id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)",
+                libsql::params![old_position, new_position],
+            )
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+            println!("[move_tag] Shifted {} rows", rows);
+        }
         
         // Update the tag's position
-        conn.execute(
+        println!("[move_tag] Setting tag {} position to {}", id, new_position);
+        let rows = conn.execute(
             "UPDATE tags SET position = ? WHERE id = ?",
-            libsql::params![position, id],
+            libsql::params![new_position, id],
         )
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
+        println!("[move_tag] Updated {} rows", rows);
+        
+        // Drop conn before calling reindex (which also needs conn)
+        drop(conn);
+        
+        // Reindex all root tag positions to ensure no gaps or duplicates
+        self.reindex_root_tags().await?;
 
+        println!("[move_tag] Done");
+        Ok(())
+    }
+    
+    /// Reindex all root tag positions to be sequential (0, 1, 2, ...)
+    async fn reindex_root_tags(&self) -> DomainResult<()> {
+        let conn = self.conn.lock().await;
+        
+        // Get all root tags ordered by current position
+        let mut rows = conn
+            .query(
+                "SELECT id FROM tags 
+                 WHERE id NOT IN (SELECT DISTINCT child_tag_id FROM tag_tags)
+                 ORDER BY position, id",
+                (),
+            )
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        let mut ids = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let id: u32 = row.get(0).map_err(|e| DomainError::Internal(e.to_string()))?;
+            ids.push(id);
+        }
+        drop(rows);
+        
+        // Update each tag with sequential position
+        for (new_pos, id) in ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE tags SET position = ? WHERE id = ?",
+                libsql::params![new_pos as i32, *id],
+            )
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        }
+        
+        println!("[reindex_root_tags] Reindexed {} root tags", ids.len());
         Ok(())
     }
     

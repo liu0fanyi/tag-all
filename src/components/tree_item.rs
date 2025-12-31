@@ -9,6 +9,7 @@ use crate::models::{Item, Tag};
 use crate::commands;
 use crate::context::AppContext;
 use crate::components::{EditTarget, DeleteConfirmButton};
+use crate::store::{use_app_store, store_update_item, store_remove_item, AppStateStoreFields};
 
 /// A single item row in the tree
 #[component]
@@ -24,8 +25,10 @@ pub fn TreeItem(
 ) -> impl IntoView {
     // Get context from parent
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
+    let store = use_app_store();
     
     let id = item.id;
+    let position = item.position;
     let completed = item.completed;
     let collapsed = item.collapsed;
     let text = item.text.clone();
@@ -39,7 +42,8 @@ pub fn TreeItem(
     let (item_tags, set_item_tags) = signal(Vec::<Tag>::new());
     
     Effect::new(move |_| {
-        let _ = ctx.reload_trigger.get();
+        // Watch store.tags_relation_version for changes
+        let _ = store.tags_relation_version().get();
         spawn_local(async move {
             if let Ok(tags) = commands::get_item_tags(id).await {
                 // Backend sorts by pinyin
@@ -124,8 +128,12 @@ pub fn TreeItem(
                     <button class="collapse-btn" on:click=move |ev| {
                         ev.stop_propagation();
                         spawn_local(async move {
-                            let _ = commands::toggle_collapsed(id).await;
-                            ctx.reload();
+                            if let Ok(new_collapsed) = commands::toggle_collapsed(id).await {
+                                // Update only the collapsed field in store
+                                store.items().write().iter_mut()
+                                    .find(|i| i.id == id)
+                                    .map(|i| i.collapsed = new_collapsed);
+                            }
                         });
                     }>
                         {if collapsed { "▶" } else { "▼" }}
@@ -150,8 +158,9 @@ pub fn TreeItem(
                         on:click=move |ev| {
                             ev.stop_propagation();
                             spawn_local(async move {
-                                let _ = commands::decrement_item(id).await;
-                                ctx.reload();
+                                if let Ok(updated) = commands::decrement_item(id).await {
+                                    store_update_item(&store, updated);
+                                }
                             });
                         }
                     >
@@ -171,18 +180,20 @@ pub fn TreeItem(
                                 if is_once && !completed {
                                     // Once type - delete on complete
                                     let _ = commands::delete_item(id).await;
+                                    store_remove_item(&store, id);
                                 } else {
-                                    let _ = commands::toggle_item(id).await;
+                                    if let Ok(updated) = commands::toggle_item(id).await {
+                                        store_update_item(&store, updated);
+                                    }
                                 }
-                                ctx.reload();
                             });
                         }
                     />
                 }.into_any()
             }}
             
-            // Text
-            <span class="item-text">{text}</span>
+            // Text with position
+            <span class="item-text">{format!("[{}] {}", position, text)}</span>
             
             // Countdown editable input (only for countdown type)
             {if is_countdown {
@@ -212,8 +223,9 @@ pub fn TreeItem(
                             let input = target.dyn_ref::<web_sys::HtmlInputElement>().unwrap();
                             let value: i32 = input.value().parse().unwrap_or(0);
                             spawn_local(async move {
-                                let _ = commands::set_item_count(id, Some(value)).await;
-                                ctx.reload();
+                                if let Ok(updated) = commands::set_item_count(id, Some(value)).await {
+                                    store_update_item(&store, updated);
+                                }
                             });
                         }
                     />
@@ -234,7 +246,7 @@ pub fn TreeItem(
                 on_confirm=move || {
                     spawn_local(async move {
                         let _ = commands::delete_item(id).await;
-                        ctx.reload();
+                        store_remove_item(&store, id);
                     });
                 }
             />

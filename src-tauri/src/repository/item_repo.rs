@@ -41,6 +41,48 @@ impl ItemRepository {
             Ok(0)
         }
     }
+
+    /// Reindex items under a parent to be sequential (0, 1, 2, ...)
+    async fn reindex_items(&self, parent_id: Option<u32>) -> DomainResult<()> {
+        let conn = self.conn.lock().await;
+        
+        // Get all items under this parent ordered by current position
+        let mut rows = match parent_id {
+            Some(pid) => conn
+                .query(
+                    "SELECT id FROM items WHERE parent_id = ? ORDER BY position, id",
+                    libsql::params![pid],
+                )
+                .await
+                .map_err(|e| DomainError::Internal(e.to_string()))?,
+            None => conn
+                .query(
+                    "SELECT id FROM items WHERE parent_id IS NULL ORDER BY position, id",
+                    (),
+                )
+                .await
+                .map_err(|e| DomainError::Internal(e.to_string()))?,
+        };
+        
+        let mut ids = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let id: u32 = row.get(0).map_err(|e| DomainError::Internal(e.to_string()))?;
+            ids.push(id);
+        }
+        drop(rows);
+        
+        // Update each item with sequential position
+        for (new_pos, id) in ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE items SET position = ? WHERE id = ?",
+                libsql::params![new_pos as i32, *id],
+            )
+            .await
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        }
+        
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -191,6 +233,10 @@ impl HierarchyRepository<Item> for ItemRepository {
         )
         .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
+        
+        // Drop conn and reindex items under the parent
+        drop(conn);
+        self.reindex_items(new_parent_id).await?;
 
         Ok(())
     }

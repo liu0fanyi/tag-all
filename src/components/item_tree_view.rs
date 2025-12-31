@@ -13,13 +13,14 @@ use crate::commands;
 use crate::context::AppContext;
 use crate::components::{TreeItem, EditTarget};
 use crate::app::{FilterMode, SortMode};
+use crate::store::{use_app_store, AppStateStoreFields};
 
 use leptos_dragdrop::*;
 
 /// Item tree view component with DnD support and tag filtering
 #[component]
 pub fn ItemTreeView(
-    items: ReadSignal<Vec<Item>>,
+    items: Memo<Vec<Item>>,
     selected_item: ReadSignal<Option<u32>>,
     set_selected_item: WriteSignal<Option<u32>>,
     selected_tags: ReadSignal<Vec<u32>>,
@@ -36,9 +37,9 @@ pub fn ItemTreeView(
     let dnd = create_dnd_signals();
     
     // Bind global mouseup handler for dropping
-    let set_reload = ctx.clone();
+    let ws_id = ctx.current_workspace;
+    let store = use_app_store();
     bind_global_mouseup(dnd.clone(), move |dragged_id, target| {
-        let set_reload = set_reload.clone();
         spawn_local(async move {
             match target {
                 DropTarget::Item(target_id) => {
@@ -48,7 +49,10 @@ pub fn ItemTreeView(
                     let _ = commands::move_item(dragged_id, parent_id, position).await;
                 }
             }
-            set_reload.reload();
+            // Refetch items and update store
+            if let Ok(loaded) = commands::list_items_by_workspace(ws_id.get_untracked()).await {
+                *store.items().write() = loaded;
+            }
         });
     });
     

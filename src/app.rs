@@ -4,10 +4,12 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use reactive_stores::Store;
 
 use crate::models::{Item, Tag, Workspace};
 use crate::commands;
 use crate::context::AppContext;
+use crate::store::{AppState, AppStateStoreFields};
 use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn, TitleBar};
 
 /// Filter mode for tag-based item filtering
@@ -28,10 +30,14 @@ pub enum SortMode {
 
 #[component]
 pub fn App() -> impl IntoView {
-    // State
-    let (items, set_items) = signal(Vec::<Item>::new());
-    let (tags, set_tags) = signal(Vec::<Tag>::new());
-    let (workspaces, set_workspaces) = signal(Vec::<Workspace>::new());
+    // Create and provide the global store
+    let store = Store::new(AppState::new());
+    provide_context(store);
+    
+    // Derived signals from store for compatibility
+    let items = Memo::new(move |_| store.items().get());
+    let tags = Memo::new(move |_| store.tags().get());
+    let workspaces = Memo::new(move |_| store.workspaces().get());
     let (current_workspace, set_current_workspace) = signal(1u32);
     let (adding_under, set_adding_under) = signal::<Option<u32>>(None);
     let (reload_trigger, set_reload_trigger) = signal(0u32);
@@ -72,21 +78,24 @@ pub fn App() -> impl IntoView {
         let _ = reload_trigger.get();
         spawn_local(async move {
             if let Ok(loaded) = commands::list_workspaces().await {
-                set_workspaces.set(loaded);
+                *store.workspaces().write() = loaded;
             }
         });
     });
 
     // Load items when workspace or trigger changes
     Effect::new(move |_| {
-        let trigger = reload_trigger.get();
+        let _ = reload_trigger.get();
         let ws_id = current_workspace.get();
         spawn_local(async move {
             if let Ok(loaded) = commands::list_items_by_workspace(ws_id).await {
-                set_items.set(loaded);
+                *store.items().write() = loaded;
             }
             if let Ok(loaded) = commands::list_tags().await {
-                set_tags.set(loaded);
+                *store.tags().write() = loaded;
+            }
+            if let Ok(loaded) = commands::get_root_tags().await {
+                *store.root_tags().write() = loaded;
             }
         });
     });

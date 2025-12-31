@@ -9,11 +9,13 @@ use wasm_bindgen::JsCast;
 use crate::commands::{self, CreateItemArgs};
 use crate::context::AppContext;
 use crate::components::type_selector::ITEM_TYPES;
+use crate::store::{use_app_store, AppStateStoreFields};
 
 /// Form for creating new items (root or child)
 #[component]
 pub fn NewItemForm() -> impl IntoView {
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
+    let store = use_app_store();
     
     let (new_text, set_new_text) = signal(String::new());
     let (item_type, set_item_type) = signal(String::from("daily"));
@@ -36,7 +38,10 @@ pub fn NewItemForm() -> impl IntoView {
             if commands::create_item(&args).await.is_ok() {
                 set_new_text.set(String::new());
                 ctx.set_adding_under(None);
-                ctx.reload();
+                // Refetch items to maintain proper tree structure
+                if let Ok(loaded) = commands::list_items_by_workspace(workspace).await {
+                    *store.items().write() = loaded;
+                }
             }
         });
     };
