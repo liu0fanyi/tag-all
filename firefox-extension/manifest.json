@@ -13,7 +13,8 @@
         "activeTab",
         "storage",
         "notifications",
-        "https://*.turso.io/"
+        "https://*.turso.io/",
+        "alarms"
     ],
     "background": {
         "scripts": [

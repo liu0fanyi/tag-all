@@ -33,12 +33,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+let currentTagFilter = null;
+
 async function loadBookmarks(searchQuery = '') {
     const listEl = document.getElementById('list');
 
     try {
-        // 获取配置
-        const config = await browser.storage.local.get(['tursoUrl', 'tursoToken']);
+        // 获取配置和本地队列
+        const data = await browser.storage.local.get(['tursoUrl', 'tursoToken', 'syncQueue']);
+        const config = { tursoUrl: data.tursoUrl, tursoToken: data.tursoToken };
+        const syncQueue = data.syncQueue || [];
 
         if (!config.tursoUrl || !config.tursoToken) {
             listEl.innerHTML = `
@@ -53,63 +57,148 @@ async function loadBookmarks(searchQuery = '') {
             return;
         }
 
-        // 创建客户端
+        // 1. 先立即显示本地队列项 (不阻塞)
+        const queuedItems = syncQueue.filter(item => {
+            const matchSearch = !searchQuery || (item.title && item.title.toLowerCase().includes(searchQuery.toLowerCase()));
+            const matchTag = !currentTagFilter;
+            return matchSearch && matchTag;
+        }).map(item => ({
+            id: 'pending-' + (item.added_at || Date.now()),
+            text: item.title,
+            url: item.url,
+            summary: item.selection,
+            created_at: item.created_at,
+            pending: true
+        })).reverse();
+
+        // 如果有本地队列项，先显示它们（加上"加载中"提示）
+        if (queuedItems.length > 0) {
+            renderBookmarks(queuedItems, true); // true = isLoading
+        } else {
+            listEl.innerHTML = `<div class="loading">⏳ 加载中...</div>`;
+        }
+
+        // 2. 创建客户端并异步加载DB数据
         client = createClient({
             url: config.tursoUrl,
             authToken: config.tursoToken
         });
 
-        console.log('Sidebar: Ensuring schema...');
-        // 确保schema正确（添加url和summary字段如果不存在）
+        // 加载Tags (不阻塞主列表)
+        loadTags(client).catch(console.warn);
+
+        // 3. 查询DB数据
+        let dbItems = [];
         try {
-            await ensureSchema(client);
-            console.log('Sidebar: Schema ensured');
+            let sql = '';
+            let args = [];
+
+            if (currentTagFilter) {
+                sql = `
+                  SELECT DISTINCT i.id, i.text, i.url, i.summary, i.created_at
+                  FROM items i
+                  JOIN item_tags it1 ON i.id = it1.item_id
+                  JOIN tags t1 ON it1.tag_id = t1.id
+                  JOIN item_tags it2 ON i.id = it2.item_id
+                  JOIN tags t2 ON it2.tag_id = t2.id
+                  WHERE t1.name = 'web-bookmark' 
+                  AND t2.id = ? 
+                  ${searchQuery ? 'AND i.text LIKE ?' : ''}
+                  ORDER BY i.created_at DESC
+                  LIMIT 100
+               `;
+                args = [currentTagFilter];
+                if (searchQuery) args.push(`%${searchQuery}%`);
+
+            } else {
+                sql = `
+                  SELECT DISTINCT i.id, i.text, i.url, i.summary, i.created_at
+                  FROM items i
+                  JOIN item_tags it ON i.id = it.item_id
+                  JOIN tags t ON it.tag_id = t.id
+                  WHERE t.name = 'web-bookmark'
+                  ${searchQuery ? 'AND i.text LIKE ?' : ''}
+                  ORDER BY i.created_at DESC
+                  LIMIT 100
+                `;
+                if (searchQuery) args.push(`%${searchQuery}%`);
+            }
+
+            const result = await client.execute({ sql, args });
+            dbItems = result.rows;
+
         } catch (error) {
-            console.warn('Sidebar: Schema migration failed, will try query anyway:', error);
+            console.warn('DB Query failed:', error);
         }
 
-        console.log('Sidebar: Querying bookmarks...');
-        // 查询数据
-        const sql = searchQuery ? `
-      SELECT DISTINCT i.id, i.text, i.url, i.summary, i.created_at
-      FROM items i
-      INNER JOIN item_tags it ON i.id = it.item_id
-      INNER JOIN tags t ON it.tag_id = t.id
-      WHERE t.name = 'web-bookmark' AND i.text LIKE ?
-      ORDER BY i.created_at DESC
-      LIMIT 100
-    ` : `
-      SELECT i.id, i.text, i.url, i.summary, i.created_at
-      FROM items i
-      INNER JOIN item_tags it ON i.id = it.item_id
-      INNER JOIN tags t ON it.tag_id = t.id
-      WHERE t.name = 'web-bookmark'
-      ORDER BY i.created_at DESC
-      LIMIT 100
-    `;
-
-        const result = await client.execute({
-            sql: sql,
-            args: searchQuery ? [`%${searchQuery}%`] : []
-        });
-
-        renderBookmarks(result.rows);
+        // 4. 合并并最终渲染
+        const finalItems = [...queuedItems, ...dbItems];
+        renderBookmarks(finalItems);
 
     } catch (error) {
         console.error('加载失败:', error);
-        listEl.innerHTML = `
-      <div class="error">
-        <p>❌ 加载失败</p>
-        <small>${escapeHtml(error.message)}</small>
-      </div>
-    `;
+        getErrorHtml(error.message);
     }
 }
 
-function renderBookmarks(items) {
+async function loadTags(client) {
+    const tagsEl = document.getElementById('tags');
+    if (!tagsEl) return;
+
+    // 获取所有在该workspace下使用过的Tags
+    // (关联了 web-bookmark 里的items 的 tags)
+    // SQL: Find tags used by items that also have 'web-bookmark' tag.
+    try {
+        const sql = `
+            SELECT DISTINCT t.id, t.name, t.color
+            FROM tags t
+            JOIN item_tags it ON t.id = it.tag_id
+            JOIN items i ON it.item_id = i.id
+            JOIN item_tags it_wb ON i.id = it_wb.item_id
+            JOIN tags t_wb ON it_wb.tag_id = t_wb.id
+            WHERE t_wb.name = 'web-bookmark'
+            AND t.name != 'web-bookmark' -- Exclude itself
+            ORDER BY t.name
+        `;
+
+        const result = await client.execute({ sql, args: [] });
+        const tags = result.rows;
+
+        // Render
+        const allClass = !currentTagFilter ? 'active' : '';
+        let html = `<span class="tag-pill ${allClass}" data-id="">全部</span>`;
+
+        tags.forEach(tag => {
+            const activeClass = currentTagFilter === tag.id ? 'active' : '';
+            const colorStyle = tag.color ? `style="border-color:${tag.color}; color:${tag.color}"` : '';
+            html += `<span class="tag-pill ${activeClass}" data-id="${tag.id}" ${colorStyle}>${escapeHtml(tag.name)}</span>`;
+        });
+
+        tagsEl.innerHTML = html;
+
+        // Events
+        tagsEl.querySelectorAll('.tag-pill').forEach(el => {
+            el.addEventListener('click', () => {
+                const id = el.dataset.id;
+                currentTagFilter = id ? parseInt(id) : null;
+                loadBookmarks(); // Refresh list with filter
+            });
+        });
+
+    } catch (e) {
+        console.warn('Tag fetch failed:', e);
+    }
+}
+
+function renderBookmarks(items, isLoading = false) {
     const listEl = document.getElementById('list');
 
     if (items.length === 0) {
+        if (isLoading) {
+            listEl.innerHTML = `<div class="loading">⏳ 加载中...</div>`;
+            return;
+        }
+
         listEl.innerHTML = `
       <div class="empty-state">
         <p>📭 还没有保存的书签</p>
@@ -119,24 +208,98 @@ function renderBookmarks(items) {
         return;
     }
 
-    listEl.innerHTML = items.map(item => `
-    <div class="item" data-url="${escapeHtml(item.url || '')}">
-      <div class="title">${escapeHtml(item.text)}</div>
-      ${item.summary ? `<div class="summary">${escapeHtml(item.summary)}</div>` : ''}
-      <div class="meta">${formatDate(item.created_at)}</div>
+    let html = items.map(item => {
+        const pendingClass = item.pending ? 'pending' : '';
+        const pendingBadge = item.pending ? '<span class="badge">⏳</span>' : '';
+
+        // Extract domain from URL
+        let domain = '';
+        try {
+            if (item.url) {
+                domain = new URL(item.url).hostname.replace(/^www\./, '');
+            }
+        } catch (e) {
+            domain = '';
+        }
+
+        // Favicon URL (using DuckDuckGo's reliable favicon service)
+        const faviconUrl = domain ? `https://icons.duckduckgo.com/ip3/${domain}.ico` : '';
+
+        // Item ID for delete (pending items use url as identifier)
+        const itemId = item.pending ? '' : item.id;
+        const isPending = item.pending ? 'true' : 'false';
+
+        return `
+    <div class="item ${pendingClass}" data-url="${escapeHtml(item.url || '')}" data-id="${itemId}" data-pending="${isPending}">
+      ${faviconUrl ? `<img class="favicon" src="${faviconUrl}" alt="">` : '<span class="favicon">📄</span>'}
+      <div class="item-info">
+        ${pendingBadge}
+        <span class="title">${escapeHtml(item.text)}</span>
+        ${domain ? `<span class="domain">${escapeHtml(domain)}</span>` : ''}
+      </div>
+      <button class="delete-btn" title="删除">×</button>
     </div>
-  `).join('');
+  `}).join('');
+
+    if (isLoading) {
+        html += `<div class="loading-mini" style="text-align:center; padding:10px; color:#999;">⏳ 同步中...</div>`;
+    }
+
+    listEl.innerHTML = html;
 
     // 添加点击事件
     listEl.querySelectorAll('.item').forEach(el => {
-        el.addEventListener('click', () => {
+        // Click on item to open
+        el.addEventListener('click', (e) => {
+            // Ignore if clicking delete button
+            if (e.target.classList.contains('delete-btn')) return;
+
             const url = el.dataset.url;
             if (url) {
                 browser.tabs.create({ url });
             }
         });
+
+        // Delete button click
+        el.querySelector('.delete-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+
+            const isPending = el.dataset.pending === 'true';
+            const url = el.dataset.url;
+            const itemId = el.dataset.id;
+
+            if (isPending) {
+                // Remove from local sync queue
+                await removeFromSyncQueue(url);
+            } else if (itemId) {
+                // Delete from database via background
+                await browser.runtime.sendMessage({
+                    type: 'delete-bookmark',
+                    itemId: parseInt(itemId)
+                });
+            }
+
+            // Remove from UI immediately
+            el.remove();
+        });
     });
 }
+
+// Remove item from sync queue by URL
+async function removeFromSyncQueue(url) {
+    const data = await browser.storage.local.get('syncQueue');
+    const queue = data.syncQueue || [];
+
+    const newQueue = queue.filter(item => item.url !== url);
+    await browser.storage.local.set({ syncQueue: newQueue });
+}
+// Helper to just return error HTML if needed or keep existing logic logic
+function getErrorHtml(msg) {
+    const listEl = document.getElementById('list');
+    listEl.innerHTML = `<div class="error"><p>❌ 加载失败</p><small>${escapeHtml(msg)}</small></div>`;
+}
+
+// ensureSchema ... existing ...
 
 function formatDate(timestamp) {
     const date = new Date(timestamp);
