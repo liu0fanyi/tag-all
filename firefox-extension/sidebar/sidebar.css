@@ -10,19 +10,35 @@ body {
 }
 
 .header {
-    padding: 10px;
+    padding: 8px 10px;
     background: #f5f5f5;
     border-bottom: 1px solid #ddd;
+}
+
+.header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.search-box {
     display: flex;
-    gap: 8px;
-    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
 }
 
 #search {
     flex: 1;
-    padding: 6px;
+    padding: 6px 8px;
     border: 1px solid #ccc;
     border-radius: 4px;
+    font-size: 13px;
+}
+
+.search-box button {
+    padding: 4px 8px;
+    font-size: 14px;
 }
 
 button {

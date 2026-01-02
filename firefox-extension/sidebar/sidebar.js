@@ -15,11 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     });
 
-    // 刷新
-    document.getElementById('refresh').addEventListener('click', () => {
-        loadBookmarks();
-    });
-
     // 设置
     document.getElementById('settings').addEventListener('click', () => {
         browser.runtime.openOptionsPage();
