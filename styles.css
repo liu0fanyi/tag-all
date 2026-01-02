@@ -1551,3 +1551,7 @@ button {
     color: #fff;
   }
 }
+/* Sync Button & Animation */
+.titlebar-btn.sync { font-size: 16px; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; display: inline-block; }

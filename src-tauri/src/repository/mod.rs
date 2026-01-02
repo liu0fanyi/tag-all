@@ -17,4 +17,4 @@ pub use tag::TagRepository;
 pub use window_state_repo::{WindowStateRepository, WindowState};
 pub use workspace_repo::WorkspaceRepository;
 pub use traits::{Repository, HierarchyRepository};
-pub use db::init_db;
+pub use db::{init_db, SyncConfig, BackupData, configure_sync, get_sync_config, sync_db, DbState};

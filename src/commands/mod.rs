@@ -6,6 +6,7 @@ mod item;
 mod tag;
 mod workspace;
 mod window;
+mod sync;
 
 use wasm_bindgen::prelude::*;
 
@@ -20,3 +21,4 @@ pub use item::*;
 pub use tag::*;
 pub use workspace::*;
 pub use window::*;
+pub use sync::*;

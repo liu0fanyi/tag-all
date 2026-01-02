@@ -10,7 +10,7 @@ use crate::models::{Item, Tag, Workspace};
 use crate::commands;
 use crate::context::AppContext;
 use crate::store::{AppState, AppStateStoreFields};
-use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn, TitleBar};
+use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn, TitleBar, SyncModal};
 
 /// Filter mode for tag-based item filtering
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -58,6 +58,13 @@ pub fn App() -> impl IntoView {
     // Pin state (always on top)
     let (is_pinned, set_is_pinned) = signal(false);
     
+    // Sync state
+    let (sync_url, set_sync_url) = signal(String::new());
+    let (sync_token, set_sync_token) = signal(String::new());
+    let (sync_status, set_sync_status) = signal("idle".to_string());
+    let (sync_msg, set_sync_msg) = signal(String::new());
+    let (show_sync_modal, set_show_sync_modal) = signal(false);
+    
     // Load initial pinned state
     Effect::new(move |_| {
         spawn_local(async move {
@@ -66,6 +73,19 @@ pub fn App() -> impl IntoView {
                 if state.pinned {
                     let _ = commands::set_pinned(true).await;
                 }
+            }
+        });
+    });
+    
+    // Load sync config on mount
+    Effect::new(move |_| {
+        spawn_local(async move {
+            match commands::get_cloud_sync_config().await {
+                Ok(Some(config)) => {
+                    set_sync_url.set(config.url);
+                    set_sync_token.set(config.token);
+                }
+                _ => {}
             }
         });
     });
@@ -114,11 +134,76 @@ pub fn App() -> impl IntoView {
     let clear_filter = move |_| {
         set_selected_tags.set(Vec::new());
     };
+    
+    // Toggle sync modal
+    let toggle_sync_modal = move |_| {
+        set_show_sync_modal.update(|v| *v = !*v);
+    };
+    
+    // Test connection = Save config + sync
+    let test_connection = move |_| {
+        set_sync_status.set("testing".to_string());
+        set_sync_msg.set("正在保存配置并同步...".to_string());
+        
+        let url_val = sync_url.get_untracked();
+        let token_val = sync_token.get_untracked();
+        
+        spawn_local(async move {
+            match commands::configure_cloud_sync(url_val, token_val).await {
+                Ok(_) => {
+                    set_sync_status.set("success".to_string());
+                    set_sync_msg.set("同步成功！".to_string());
+                    set_reload_trigger.update(|n| *n += 1);
+                }
+                Err(e) => {
+                    set_sync_status.set("error".to_string());
+                    set_sync_msg.set(format!("失败: {}", e));
+                }
+            }
+        });
+    };
+    
+    // Manual sync (right-click)
+    let perform_manual_sync = move |_| {
+        // Check if configured
+        let has_config = !sync_url.get_untracked().is_empty() && !sync_token.get_untracked().is_empty();
+        
+        if !has_config {
+            set_sync_status.set("error".to_string());
+            set_sync_msg.set("请先配置云同步（点击图标输入URL和Token）".to_string());
+            set_show_sync_modal.set(true);
+            return;
+        }
+        
+        set_sync_status.set("syncing".to_string());
+        set_sync_msg.set("正在同步...".to_string());
+        spawn_local(async move {
+            match commands::sync_cloud_db().await {
+                Ok(_) => {
+                    set_sync_status.set("success".to_string());
+                    set_sync_msg.set("同步完成！".to_string());
+                    set_reload_trigger.update(|n| *n += 1);
+                }
+                Err(e) => {
+                    set_sync_status.set("error".to_string());
+                    set_sync_msg.set(format!("同步失败: {}", e));
+                }
+            }
+        });
+    };
 
     view! {
         <div class="app-container">
             // Custom Title Bar
-            <TitleBar is_pinned=is_pinned set_is_pinned=set_is_pinned />
+            <TitleBar 
+                is_pinned=is_pinned 
+                set_is_pinned=set_is_pinned
+                sync_url=sync_url.into()
+                sync_token=sync_token.into()
+                sync_status=sync_status.into()
+                on_sync_click=Callback::new(toggle_sync_modal)
+                on_sync_right_click=Callback::new(perform_manual_sync)
+            />
             
             <div class="app-layout">
                 // Left: Tag Column
@@ -222,6 +307,20 @@ pub fn App() -> impl IntoView {
                 set_editing_target=set_memo_editing_target
             />
             </div>
+            
+            // Sync Configuration Modal
+            <SyncModal
+                show=show_sync_modal.into()
+                set_show=set_show_sync_modal
+                sync_url=sync_url.into()
+                set_sync_url=set_sync_url
+                sync_token=sync_token.into()
+                set_sync_token=set_sync_token
+                sync_status=sync_status.into()
+                sync_msg=sync_msg.into()
+                on_test_connection=Callback::new(test_connection)
+                on_manual_sync=Callback::new(perform_manual_sync)
+            />
         </div>
     }
 }

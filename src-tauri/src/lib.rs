@@ -14,7 +14,7 @@ mod domain;
 mod repository;
 mod commands;
 
-use repository::{ItemRepository, TagRepository, WindowStateRepository, WorkspaceRepository, init_db};
+use repository::{ItemRepository, TagRepository, WindowStateRepository, WorkspaceRepository, init_db, DbState};
 
 /// Application state shared across commands
 pub struct AppState {
@@ -22,6 +22,7 @@ pub struct AppState {
     pub tag_repo: Mutex<TagRepository>,
     pub window_repo: Mutex<WindowStateRepository>,
     pub workspace_repo: Mutex<WorkspaceRepository>,
+    pub db_state: DbState,
 }
 
 /// Get database path from app handle
@@ -58,6 +59,7 @@ pub fn run() {
                     tag_repo: Mutex::new(tag_repo),
                     window_repo: Mutex::new(window_repo),
                     workspace_repo: Mutex::new(workspace_repo),
+                    db_state,
                 });
             });
             
@@ -110,6 +112,10 @@ pub fn run() {
             commands::create_workspace,
             commands::delete_workspace,
             commands::rename_workspace,
+            // Cloud Sync
+            commands::configure_cloud_sync,
+            commands::get_cloud_sync_config,
+            commands::sync_cloud_db,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -177,7 +177,7 @@ pub fn TagAutocomplete(
                 } else {
                     let selected = selected_idx.get();
                     view! {
-                        <div class="tag-suggestions">
+                        <div class="autocomplete-list">
                             {sugg.into_iter().enumerate().map(|(i, tag)| {
                                 let name = tag.name.clone();
                                 let name_for_click = name.clone();
@@ -185,7 +185,7 @@ pub fn TagAutocomplete(
                                 view! {
                                     <button
                                         type="button"
-                                        class=if is_selected { "suggestion-item selected" } else { "suggestion-item" }
+                                        class=if is_selected { "autocomplete-item selected" } else { "autocomplete-item" }
                                         on:click=move |ev| {
                                             ev.prevent_default();
                                             handle_suggestion_select(name_for_click.clone());

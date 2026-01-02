@@ -14,6 +14,7 @@ mod memo_editor_column;
 mod title_bar;
 mod delete_confirm_button;
 mod editor_target;
+mod sync_modal;
 
 pub use tree_item::TreeItem;
 pub use new_item_form::NewItemForm;
@@ -26,4 +27,5 @@ pub use memo_editor_column::MemoEditorColumn;
 pub use title_bar::TitleBar;
 pub use delete_confirm_button::DeleteConfirmButton;
 pub use editor_target::EditTarget;
+pub use sync_modal::SyncModal;
 

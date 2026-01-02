@@ -12,6 +12,12 @@ use crate::commands;
 pub fn TitleBar(
     is_pinned: ReadSignal<bool>,
     set_is_pinned: WriteSignal<bool>,
+    // Sync parameters
+    sync_url: ReadSignal<String>,
+    sync_token: ReadSignal<String>,
+    sync_status: ReadSignal<String>,
+    on_sync_click: Callback<()>,
+    on_sync_right_click: Callback<()>,
 ) -> impl IntoView {
     // Toggle pin
     let toggle_pin = move |_| {
@@ -63,6 +69,44 @@ pub fn TitleBar(
             </Show>
             
             <div class="titlebar-controls">
+                <button
+                    class="titlebar-btn sync"
+                    title=move || {
+                        let has_config = !sync_url.get().is_empty() && !sync_token.get().is_empty();
+                        if has_config {
+                            "左键：配置同步\n右键：立即同步"
+                        } else {
+                            "左键：配置同步"
+                        }
+                    }
+                    on:click=move |ev| {
+                        ev.stop_propagation();
+                        on_sync_click.run(());
+                    }
+                    on:contextmenu=move |ev: web_sys::MouseEvent| {
+                        ev.prevent_default();
+                        ev.stop_propagation();
+                        on_sync_right_click.run(());
+                    }
+                >
+                    {move || {
+                        let has_config = !sync_url.get().is_empty() && !sync_token.get().is_empty();
+                        let status = sync_status.get();
+                        let (icon, class) = if !has_config {
+                            ("⚙️", "")
+                        } else {
+                            match status.as_str() {
+                                "syncing" | "testing" => ("🔄", "animate-spin"),
+                                "success" => ("✅", ""),
+                                "error" => ("❌", ""),
+                                _ => ("☁️", ""),
+                            }
+                        };
+                        view! {
+                            <span class=class>{icon}</span>
+                        }
+                    }}
+                </button>
                 <button
                     class=move || if is_pinned.get() { "titlebar-btn pin active" } else { "titlebar-btn pin" }
                     title=move || if is_pinned.get() { "取消固定" } else { "固定窗口" }
