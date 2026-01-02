@@ -38,7 +38,7 @@ impl Repository<Item> for ItemRepository {
         
         let mut rows = conn
             .query(
-                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed FROM items WHERE id = ?",
+                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, created_at, updated_at FROM items WHERE id = ?",
                 libsql::params![id],
             )
             .await
@@ -56,7 +56,7 @@ impl Repository<Item> for ItemRepository {
         
         let mut rows = conn
             .query(
-                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed FROM items ORDER BY parent_id NULLS FIRST, position ASC",
+                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, created_at, updated_at FROM items ORDER BY parent_id NULLS FIRST, position ASC",
                 (),
             )
             .await
@@ -70,20 +70,31 @@ impl Repository<Item> for ItemRepository {
     }
 
     async fn update(&self, entity: &Item) -> DomainResult<Item> {
+        // Update item with timestamp
         let conn = self.conn.lock().await;
         
+        let text = entity.text.clone();
+        let completed = if entity.completed { 1 } else { 0 };
+        let item_type = entity.item_type.as_str().to_string();
+        let memo = entity.memo.clone();
+        let collapsed = if entity.collapsed { 1 } else { 0 };
+        let url = entity.url.clone();
+        let summary = entity.summary.clone();
+        
         conn.execute(
-            "UPDATE items SET text = ?, completed = ?, item_type = ?, memo = ?, target_count = ?, current_count = ?, parent_id = ?, position = ?, collapsed = ? WHERE id = ?",
+            "UPDATE items SET text = ?, completed = ?, item_type = ?, memo = ?, target_count = ?, current_count = ?, parent_id = ?, position = ?, collapsed = ?, url = ?, summary = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
             libsql::params![
-                entity.text.clone(),
-                if entity.completed { 1 } else { 0 },
-                entity.item_type.as_str().to_string(),
-                entity.memo.clone(),
+                text,
+                completed,
+                item_type,
+                memo,
                 entity.target_count,
                 entity.current_count,
                 entity.parent_id,
                 entity.position,
-                if entity.collapsed { 1 } else { 0 },
+                collapsed,
+                url,
+                summary,
                 entity.id
             ],
         )
@@ -135,5 +146,9 @@ pub(super) fn row_to_item(row: &libsql::Row) -> DomainResult<Item> {
         parent_id: row.get::<Option<u32>>(7).ok().flatten(),
         position: row.get::<i32>(8).unwrap_or(0),
         collapsed: row.get::<i32>(9).unwrap_or(0) != 0,
+        url: row.get::<Option<String>>(10).ok().flatten(),
+        summary: row.get::<Option<String>>(11).ok().flatten(),
+        created_at: row.get::<Option<i64>>(12).ok().flatten(),
+        updated_at: row.get::<Option<i64>>(13).ok().flatten(),
     })
 }

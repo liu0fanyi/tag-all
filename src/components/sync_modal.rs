@@ -31,6 +31,12 @@ pub fn SyncModal(
     view! {
         {move || if show.get() {
             view! {
+                // Backdrop to detect clicks outside
+                <div 
+                    style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 49; background: transparent;"
+                    on:click=move |_| set_show.set(false)
+                ></div>
+
                 // Compact dropdown near sync button
                 <div 
                     style="position: fixed; top: 40px; right: 120px; z-index: 50; width: 320px; background: white; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 1px solid #ddd;"

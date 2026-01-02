@@ -26,7 +26,7 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
         
         let mut rows = conn
             .query(
-                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed FROM items WHERE workspace_id = ? ORDER BY parent_id NULLS FIRST, position ASC",
+                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, created_at, updated_at FROM items WHERE workspace_id = ? ORDER BY parent_id NULLS FIRST, position ASC",
                 libsql::params![workspace_id],
             )
             .await
@@ -65,7 +65,7 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
         };
         
         conn.execute(
-            "INSERT INTO items (text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO items (text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))",
             libsql::params![
                 entity.text.clone(),
                 if entity.completed { 1 } else { 0 },
@@ -76,7 +76,9 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
                 entity.parent_id,
                 position,
                 if entity.collapsed { 1 } else { 0 },
-                workspace_id
+                workspace_id,
+                entity.url.clone(),
+                entity.summary.clone()
             ],
         )
         .await

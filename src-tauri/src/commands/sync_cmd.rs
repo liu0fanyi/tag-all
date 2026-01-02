@@ -78,6 +78,15 @@ pub async fn configure_cloud_sync(
             Err(e) => eprintln!("⚠ Safety backup failed: {}", e),
         }
     }
+
+    // === STEP 3.5: Migrate remote schema ===
+    eprintln!("[3.5/7] Migrating remote schema...");
+    if let Err(e) = repository::db::migrate_remote_schema(url.clone(), token.clone()).await {
+        eprintln!("⚠ Remote migration warning: {}", e);
+        // We continue because maybe it's connection issue but sync might still work or schema is already good
+    } else {
+        eprintln!("✓ Remote schema migrated");
+    }
     
     // === STEP 4: Save configuration ===
     eprintln!("[4/7] Saving sync configuration...");

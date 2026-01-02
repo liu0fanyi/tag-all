@@ -74,6 +74,12 @@ pub struct Item {
     
     // Level 5 field:
     // pub workspace_id: u32,
+    
+    // Level 6 fields:
+    pub url: Option<String>,
+    pub summary: Option<String>,
+    pub created_at: Option<i64>,
+    pub updated_at: Option<i64>,
 }
 
 impl Item {
@@ -90,6 +96,10 @@ impl Item {
             parent_id: None,
             position: 0,
             collapsed: false,
+            url: None,
+            summary: None,
+            created_at: None,
+            updated_at: None,
         }
     }
 
@@ -106,6 +116,10 @@ impl Item {
             parent_id: Some(parent_id),
             position,
             collapsed: false,
+            url: None,
+            summary: None,
+            created_at: None,
+            updated_at: None,
         }
     }
 

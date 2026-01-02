@@ -26,6 +26,7 @@ pub struct BackupData {
 }
 
 
+
 /// Database state wrapper
 pub struct DbState {
     db: Arc<Mutex<Option<Arc<Database>>>>,
@@ -237,6 +238,31 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             .await
             .map_err(|e| format!("Failed to add collapsed: {}", e))?;
     }
+    
+    // Level 6: Add Web Bookmark fields (url, summary, created_at, updated_at)
+    if !column_exists(conn, "items", "url").await {
+        conn.execute("ALTER TABLE items ADD COLUMN url TEXT", ())
+            .await
+            .map_err(|e| format!("Failed to add url: {}", e))?;
+    }
+    
+    if !column_exists(conn, "items", "summary").await {
+        conn.execute("ALTER TABLE items ADD COLUMN summary TEXT", ())
+            .await
+            .map_err(|e| format!("Failed to add summary: {}", e))?;
+    }
+    
+    if !column_exists(conn, "items", "created_at").await {
+        conn.execute("ALTER TABLE items ADD COLUMN created_at INTEGER DEFAULT 0", ())
+            .await
+            .map_err(|e| format!("Failed to add created_at: {}", e))?;
+    }
+    
+    if !column_exists(conn, "items", "updated_at").await {
+        conn.execute("ALTER TABLE items ADD COLUMN updated_at INTEGER DEFAULT 0", ())
+            .await
+            .map_err(|e| format!("Failed to add updated_at: {}", e))?;
+    }
 
     // Create index for faster parent-child queries
     conn.execute(
@@ -352,7 +378,7 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
 pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> {
     // Backup items
     // Explicitly select columns to ensure order and completeness
-    let mut items_stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id FROM items").await.map_err(|e| e.to_string())?;
+    let mut items_stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at FROM items").await.map_err(|e| e.to_string())?;
     let mut items_rows = items_stmt.query(()).await.map_err(|e| e.to_string())?;
     let mut items = Vec::new();
     while let Ok(Some(row)) = items_rows.next().await {
@@ -367,6 +393,10 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
         let position: i64 = row.get(8).map_err(|e| e.to_string())?;
         let collapsed: i64 = row.get(9).map_err(|e| e.to_string())?;
         let workspace_id: i64 = row.get(10).map_err(|e| e.to_string())?;
+        let url: Option<String> = row.get(11).ok();
+        let summary: Option<String> = row.get(12).ok();
+        let created_at: Option<i64> = row.get(13).ok();
+        let updated_at: Option<i64> = row.get(14).ok();
         
         items.push(serde_json::json!({
             "id": id,
@@ -379,7 +409,11 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
             "parent_id": parent_id,
             "position": position,
             "collapsed": collapsed,
-            "workspace_id": workspace_id
+            "workspace_id": workspace_id,
+            "url": url,
+            "summary": summary,
+            "created_at": created_at,
+            "updated_at": updated_at
         }));
     }
     
@@ -494,11 +528,15 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
         let position = item["position"].as_i64().unwrap_or(0);
         let collapsed = item["collapsed"].as_i64().unwrap_or(0);
         let workspace_id = item["workspace_id"].as_i64().unwrap_or(1);
+        let url = item["url"].as_str();
+        let summary = item["summary"].as_str();
+        let created_at = item["created_at"].as_i64();
+        let updated_at = item["updated_at"].as_i64();
         
         conn.execute(
-            "INSERT OR REPLACE INTO items (id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            libsql::params![id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id]
+            "INSERT OR REPLACE INTO items (id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            libsql::params![id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at]
         ).await.map_err(|e| e.to_string())?;
     }
 
@@ -548,6 +586,24 @@ pub async fn configure_sync(db_path: &PathBuf, url: String, token: String) -> Re
 /// Get current sync configuration
 pub fn get_sync_config(db_path: &PathBuf) -> Option<SyncConfig> {
     load_config(db_path)
+}
+
+/// Apply migrations directly to the remote database
+pub async fn migrate_remote_schema(url: String, token: String) -> Result<(), String> {
+    eprintln!("Connecting to remote DB for migration: {}", url);
+    let db = Builder::new_remote(url, token)
+        .build()
+        .await
+        .map_err(|e| format!("Remote build failed: {}", e))?;
+        
+    let conn = db.connect().map_err(|e| format!("Remote connect failed: {}", e))?;
+    
+    // Remote connections usually don't support foreign_keys pragma the same way or it might be default? 
+    // But safely we can try to run migrations.
+    run_migrations(&conn).await?;
+    
+    eprintln!("Remote schema migration complete");
+    Ok(())
 }
 
 /// Trigger manual sync

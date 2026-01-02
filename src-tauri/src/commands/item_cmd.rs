@@ -93,6 +93,10 @@ pub async fn update_item(
         parent_id: existing.parent_id,
         position: existing.position,
         collapsed: existing.collapsed,
+        url: existing.url,
+        summary: existing.summary,
+        created_at: existing.created_at,
+        updated_at: existing.updated_at,
     };
     
     repo.update(&updated).await.map_err(|e| e.to_string())
