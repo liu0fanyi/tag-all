@@ -52,6 +52,18 @@ async function deleteBookmark(itemId) {
 // 监听工具栏按钮点击
 browser.browserAction.onClicked.addListener(async (tab) => {
     try {
+        // 先检查是否已存在
+        const isDuplicate = await checkDuplicateUrl(tab.url);
+        if (isDuplicate) {
+            browser.notifications.create('duplicate', {
+                type: 'basic',
+                title: 'tag-all',
+                message: '此页面已保存过',
+                iconUrl: browser.runtime.getURL('icons/icon-48.png')
+            });
+            return;
+        }
+
         // 显示正在保存通知
         browser.notifications.create('saving', {
             type: 'basic',
@@ -87,6 +99,40 @@ browser.browserAction.onClicked.addListener(async (tab) => {
         });
     }
 });
+
+// 检查URL是否已存在
+async function checkDuplicateUrl(url) {
+    // 1. 检查本地队列
+    const data = await browser.storage.local.get([SYNC_QUEUE_KEY, TURSO_URL_KEY, TURSO_TOKEN_KEY]);
+    const queue = data[SYNC_QUEUE_KEY] || [];
+
+    if (queue.some(item => item.url === url)) {
+        return true;
+    }
+
+    // 2. 检查数据库
+    const { tursoUrl, tursoToken } = data;
+    if (!tursoUrl || !tursoToken) {
+        return false; // 无法检查，允许添加
+    }
+
+    try {
+        const client = createClient({
+            url: tursoUrl,
+            authToken: tursoToken
+        });
+
+        const result = await client.execute({
+            sql: 'SELECT id FROM items WHERE url = ? LIMIT 1',
+            args: [url]
+        });
+
+        return result.rows.length > 0;
+    } catch (e) {
+        console.warn('Duplicate check failed:', e);
+        return false; // 检查失败时允许添加
+    }
+}
 
 // 提取页面内容
 async function extractPageContent(tabId) {

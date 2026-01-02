@@ -95,6 +95,17 @@ button:hover {
     opacity: 1;
 }
 
+/* Active/highlighted item (matches current tab) */
+.item.active {
+    background: #e3f2fd;
+    border-left: 3px solid #2196f3;
+}
+
+.item.active .title {
+    color: #1565c0;
+    font-weight: 500;
+}
+
 .item.pending {
     background: linear-gradient(90deg, #fff8e1 0%, #fff 100%);
     border-left: 3px solid #ff9800;

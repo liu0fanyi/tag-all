@@ -31,6 +31,24 @@ document.addEventListener('DOMContentLoaded', () => {
             loadBookmarks();
         }
     });
+
+    // 监听标签页激活，高亮当前标签页对应的书签
+    browser.tabs.onActivated.addListener(async (activeInfo) => {
+        const tab = await browser.tabs.get(activeInfo.tabId);
+        highlightCurrentTab(tab.url);
+    });
+
+    // 监听标签页URL变化
+    browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+        if (changeInfo.url && tab.active) {
+            highlightCurrentTab(changeInfo.url);
+        }
+    });
+
+    // 初始化时高亮当前标签
+    browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+        if (tabs[0]) highlightCurrentTab(tabs[0].url);
+    });
 });
 
 let currentTagFilter = null;
@@ -250,13 +268,22 @@ function renderBookmarks(items, isLoading = false) {
     // 添加点击事件
     listEl.querySelectorAll('.item').forEach(el => {
         // Click on item to open
-        el.addEventListener('click', (e) => {
+        el.addEventListener('click', async (e) => {
             // Ignore if clicking delete button
             if (e.target.classList.contains('delete-btn')) return;
 
             const url = el.dataset.url;
             if (url) {
-                browser.tabs.create({ url });
+                // 查找是否已有打开的标签页
+                const tabs = await browser.tabs.query({ url: url });
+                if (tabs.length > 0) {
+                    // 切换到已有标签页
+                    await browser.tabs.update(tabs[0].id, { active: true });
+                    await browser.windows.update(tabs[0].windowId, { focused: true });
+                } else {
+                    // 没有则新开
+                    browser.tabs.create({ url });
+                }
             }
         });
 
@@ -292,6 +319,29 @@ async function removeFromSyncQueue(url) {
 
     const newQueue = queue.filter(item => item.url !== url);
     await browser.storage.local.set({ syncQueue: newQueue });
+}
+
+// 高亮当前标签页对应的书签
+function highlightCurrentTab(currentUrl) {
+    if (!currentUrl) return;
+
+    const listEl = document.getElementById('list');
+    if (!listEl) return;
+
+    // 移除之前的高亮
+    listEl.querySelectorAll('.item.active').forEach(el => {
+        el.classList.remove('active');
+    });
+
+    // 查找匹配的书签并高亮
+    listEl.querySelectorAll('.item').forEach(el => {
+        const itemUrl = el.dataset.url;
+        if (itemUrl && itemUrl === currentUrl) {
+            el.classList.add('active');
+            // 滚动到可见区域
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    });
 }
 // Helper to just return error HTML if needed or keep existing logic logic
 function getErrorHtml(msg) {
