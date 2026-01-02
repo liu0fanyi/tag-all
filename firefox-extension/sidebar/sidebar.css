@@ -53,6 +53,21 @@ button:hover {
     background: #eee;
 }
 
+/* Sync button animation */
+#sync.syncing {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 /* Tag filter styles */
 .tags {
     padding: 8px 10px;

@@ -15,6 +15,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     });
 
+    // 同步按钮
+    document.getElementById('sync').addEventListener('click', async () => {
+        const syncBtn = document.getElementById('sync');
+        syncBtn.classList.add('syncing');
+        syncBtn.disabled = true;
+
+        try {
+            await loadBookmarks();
+        } finally {
+            syncBtn.classList.remove('syncing');
+            syncBtn.disabled = false;
+        }
+    });
+
     // 设置
     document.getElementById('settings').addEventListener('click', () => {
         browser.runtime.openOptionsPage();
