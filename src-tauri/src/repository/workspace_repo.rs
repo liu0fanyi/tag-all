@@ -8,6 +8,10 @@ use std::sync::Arc;
 
 use crate::domain::{Workspace, DomainResult, DomainError};
 
+/// Fixed workspace IDs (1=todos, 2=files, 3=others, 4=web-bookmarks)
+/// These workspaces cannot be deleted or renamed
+const FIXED_WORKSPACE_IDS: [u32; 4] = [1, 2, 3, 4];
+
 pub struct WorkspaceRepository {
     conn: Arc<Mutex<Connection>>,
 }
@@ -49,10 +53,10 @@ impl WorkspaceRepository {
         Ok(Workspace::new(id, name.to_string()))
     }
 
-    /// Delete a workspace (cannot delete default workspace id=1)
+    /// Delete a workspace (cannot delete fixed workspaces with IDs 1-4)
     pub async fn delete(&self, id: u32) -> DomainResult<()> {
-        if id == 1 {
-            return Err(DomainError::InvalidInput("Cannot delete default workspace".into()));
+        if FIXED_WORKSPACE_IDS.contains(&id) {
+            return Err(DomainError::InvalidInput("Cannot delete fixed workspace".into()));
         }
         
         let conn = self.conn.lock().await;
@@ -76,8 +80,12 @@ impl WorkspaceRepository {
         Ok(())
     }
 
-    /// Rename a workspace
+    /// Rename a workspace (cannot rename fixed workspaces with IDs 1-4)
     pub async fn rename(&self, id: u32, name: &str) -> DomainResult<()> {
+        if FIXED_WORKSPACE_IDS.contains(&id) {
+            return Err(DomainError::InvalidInput("Cannot rename fixed workspace".into()));
+        }
+        
         let conn = self.conn.lock().await;
         
         conn.execute(

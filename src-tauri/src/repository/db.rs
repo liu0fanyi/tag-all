@@ -133,24 +133,51 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
             Ok(pair) => pair,
             Err(e) => {
                 eprintln!("Synced DB init failed: {}", e);
-                if e.contains("local state is incorrect") || e.contains("invalid local state") || e.contains("server returned a conflict") {
-                    eprintln!("Detected conflicting local DB state. Recovering...");
+                eprintln!("DB path: {:?}", db_path);
+                eprintln!("Checking if auto-recovery should trigger...");
+                
+                // Check for various sync conflict conditions
+                let should_recover = e.contains("local state is incorrect") 
+                    || e.contains("invalid local state") 
+                    || e.contains("server returned a conflict")
+                    || e.contains("Generation ID mismatch")
+                    || e.contains("mismatch");
+                
+                eprintln!("Should auto-recover: {}", should_recover);
+                
+                if should_recover {
+                    eprintln!("Detected conflicting local DB state. Auto-recovering by wiping local DB...");
+                    
+                    // Show what files exist before cleanup
+                    eprintln!("Files before cleanup:");
+                    if db_path.exists() { eprintln!("  - DB file exists: {:?}", db_path); }
+                    let wal_path = db_path.with_extension("db-wal");
+                    if wal_path.exists() { eprintln!("  - WAL file exists: {:?}", wal_path); }
+                    let shm_path = db_path.with_extension("db-shm");
+                    if shm_path.exists() { eprintln!("  - SHM file exists: {:?}", shm_path); }
+                    let sync_dir = db_path.parent().unwrap().join(format!("{}-sync", db_path.file_name().unwrap().to_str().unwrap()));
+                    if sync_dir.exists() { eprintln!("  - Sync dir exists: {:?}", sync_dir); }
                     
                     // Backup conflicting database
                     let conflict_path = db_path.with_extension("db.legacy");
                     if conflict_path.exists() { 
+                        eprintln!("Removing old legacy backup: {:?}", conflict_path);
                         let _ = std::fs::remove_file(&conflict_path); 
                     }
                     if let Err(e) = std::fs::rename(&db_path, &conflict_path) {
-                        eprintln!("Rename failed: {}", e);
+                        eprintln!("Rename to legacy failed: {} - removing instead", e);
+                        let _ = std::fs::remove_file(&db_path);
+                    } else {
+                        eprintln!("Backed up old DB to: {:?}", conflict_path);
                     }
                     
                     // Clean up sync metadata
+                    eprintln!("Cleaning up sync metadata...");
                     let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
                     let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
                     
-                    let sync_dir = db_path.parent().unwrap().join(format!("{}-sync", db_path.file_name().unwrap().to_str().unwrap()));
                     if sync_dir.exists() {
+                        eprintln!("Removing sync directory: {:?}", sync_dir);
                         if sync_dir.is_dir() { 
                             let _ = std::fs::remove_dir_all(&sync_dir); 
                         } else { 
@@ -158,6 +185,7 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
                         }
                     }
                     
+                    eprintln!("Retrying with clean state...");
                     // Retry with clean state
                     try_build_connect(db_path_str, conf.url, conf.token).await
                         .map_err(|e| format!("Retry failed: {}", e))?
@@ -355,9 +383,30 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Failed to add workspace_id: {}", e))?;
     }
 
-    // Create default workspace if it doesn't exist
+    // Create 4 fixed workspaces if they don't exist (IDs 1-4 are protected)
     conn.execute(
-        "INSERT OR IGNORE INTO workspaces (id, name) VALUES (1, 'Default')",
+        "INSERT OR IGNORE INTO workspaces (id, name) VALUES (1, 'todos')",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    conn.execute(
+        "INSERT OR IGNORE INTO workspaces (id, name) VALUES (2, 'files')",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    conn.execute(
+        "INSERT OR IGNORE INTO workspaces (id, name) VALUES (3, 'others')",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    conn.execute(
+        "INSERT OR IGNORE INTO workspaces (id, name) VALUES (4, 'web-bookmarks')",
         (),
     )
     .await
