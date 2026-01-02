@@ -269,12 +269,20 @@ function renderBookmarks(items, isLoading = false) {
 
             const url = el.dataset.url;
             if (url) {
-                // 查找是否已有打开的标签页
-                const tabs = await browser.tabs.query({ url: url });
-                if (tabs.length > 0) {
+                // 移除URL末尾的hash片段进行匹配
+                const urlWithoutHash = url.split('#')[0];
+
+                // 查找是否已有打开的标签页（使用URL模式匹配）
+                const allTabs = await browser.tabs.query({ currentWindow: true });
+                const matchingTab = allTabs.find(tab => {
+                    const tabUrlWithoutHash = (tab.url || '').split('#')[0];
+                    return tabUrlWithoutHash === urlWithoutHash;
+                });
+
+                if (matchingTab) {
                     // 切换到已有标签页
-                    await browser.tabs.update(tabs[0].id, { active: true });
-                    await browser.windows.update(tabs[0].windowId, { focused: true });
+                    await browser.tabs.update(matchingTab.id, { active: true });
+                    await browser.windows.update(matchingTab.windowId, { focused: true });
                 } else {
                     // 没有则新开
                     browser.tabs.create({ url });

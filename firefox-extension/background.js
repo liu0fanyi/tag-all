@@ -7,6 +7,103 @@ const SYNC_QUEUE_KEY = 'syncQueue';
 const TURSO_URL_KEY = 'tursoUrl';
 const TURSO_TOKEN_KEY = 'tursoToken';
 
+// 创建右键菜单
+browser.menus.create({
+    id: "save-tabs-to-tagall",
+    title: "添加到 tag-all",
+    contexts: ["tab"]
+});
+
+// 监听右键菜单点击
+browser.menus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === "save-tabs-to-tagall") {
+        // 获取所有高亮（选中）的标签页
+        const highlightedTabs = await browser.tabs.query({
+            currentWindow: true,
+            highlighted: true
+        });
+
+        // 如果没有多选，只保存当前右键的标签页
+        const tabsToSave = highlightedTabs.length > 1 ? highlightedTabs : [tab];
+
+        await saveMultipleTabs(tabsToSave);
+    }
+});
+
+// 批量保存多个标签页
+async function saveMultipleTabs(tabs) {
+    let savedCount = 0;
+    let skippedCount = 0;
+
+    browser.notifications.create('batch-saving', {
+        type: 'basic',
+        title: 'tag-all',
+        message: `正在保存 ${tabs.length} 个标签页...`,
+        iconUrl: browser.runtime.getURL('icons/icon-48.png')
+    });
+
+    for (const tab of tabs) {
+        try {
+            // 检查是否已存在
+            const isDuplicate = await checkDuplicateUrl(tab.url);
+            if (isDuplicate) {
+                skippedCount++;
+                continue;
+            }
+
+            // 尝试提取内容，失败时使用基本信息
+            let content = { title: tab.title, summary: '' };
+            try {
+                content = await extractPageContent(tab.id);
+            } catch (e) {
+                console.warn('Content extraction failed for:', tab.url, e);
+            }
+
+            // 添加到队列
+            await addToSyncQueueDirect(tab, content);
+            savedCount++;
+        } catch (error) {
+            console.error('Failed to save tab:', tab.url, error);
+        }
+    }
+
+    // 显示结果
+    let message = `已保存 ${savedCount} 个书签`;
+    if (skippedCount > 0) {
+        message += `，跳过 ${skippedCount} 个重复`;
+    }
+
+    browser.notifications.create('batch-success', {
+        type: 'basic',
+        title: 'tag-all',
+        message: message,
+        iconUrl: browser.runtime.getURL('icons/icon-48.png')
+    });
+
+    // 通知sidebar刷新
+    browser.runtime.sendMessage({ type: 'refresh-bookmarks' });
+
+    // 触发后台同步
+    processSyncQueue().catch(console.error);
+}
+
+// 直接添加到队列（不触发同步，批量时最后统一同步）
+async function addToSyncQueueDirect(tab, content) {
+    const data = await browser.storage.local.get(SYNC_QUEUE_KEY);
+    const queue = data[SYNC_QUEUE_KEY] || [];
+
+    const item = {
+        title: content.title || tab.title,
+        url: tab.url,
+        selection: content.summary || '',
+        created_at: Math.floor(Date.now() / 1000),
+        added_at: Date.now()
+    };
+
+    queue.push(item);
+    await browser.storage.local.set({ [SYNC_QUEUE_KEY]: queue });
+}
+
 // 监听来自sidebar的删除请求
 browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     if (message.type === 'delete-bookmark') {

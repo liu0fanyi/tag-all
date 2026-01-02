@@ -14,7 +14,9 @@
         "storage",
         "notifications",
         "https://*.turso.io/",
-        "alarms"
+        "alarms",
+        "contextMenus",
+        "menus"
     ],
     "background": {
         "scripts": [
