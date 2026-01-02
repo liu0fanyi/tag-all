@@ -1,0 +1,50 @@
+{
+    "manifest_version": 2,
+    "name": "tag-all Web Clipper",
+    "version": "1.0.0",
+    "description": "一键保存网页到tag-all云端数据库",
+    "icons": {
+        "16": "icons/icon-16.png",
+        "48": "icons/icon-48.png",
+        "128": "icons/icon-128.png"
+    },
+    "permissions": [
+        "tabs",
+        "activeTab",
+        "storage",
+        "notifications",
+        "https://*.turso.io/"
+    ],
+    "background": {
+        "scripts": [
+            "lib/libsql-client.js",
+            "background.js"
+        ]
+    },
+    "browser_action": {
+        "default_icon": "icons/icon-48.png",
+        "default_title": "保存到tag-all"
+    },
+    "sidebar_action": {
+        "default_title": "Web Bookmarks",
+        "default_panel": "sidebar/sidebar.html",
+        "default_icon": "icons/icon-48.png"
+    },
+    "options_ui": {
+        "page": "config/config.html",
+        "open_in_tab": true
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "lib/readability.js",
+                "content-extract.js"
+            ],
+            "run_at": "document_idle",
+            "all_frames": false
+        }
+    ]
+}

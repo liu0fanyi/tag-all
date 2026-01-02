@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>tag-all Web Clipper 配置</title>
+  <link rel="stylesheet" href="config.css">
+</head>
+
+<body>
+  <div class="container">
+    <h1>🏷️ tag-all Web Clipper</h1>
+    <p class="subtitle">配置Turso云端数据库连接</p>
+
+    <div class="form-section">
+      <label for="turso-url">Turso Database URL</label>
+      <input type="text" id="turso-url" placeholder="libsql://your-database.turso.io" autocomplete="off">
+      <small>从Turso控制台获取数据库URL</small>
+    </div>
+
+    <div class="form-section">
+      <label for="turso-token">Auth Token</label>
+      <input type="password" id="turso-token" placeholder="eyJ..." autocomplete="off">
+      <small>从Turso控制台创建认证token</small>
+    </div>
+
+    <div class="buttons">
+      <button id="test" class="btn-primary">测试并保存</button>
+      <button id="save" class="btn-secondary">仅保存</button>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+
+    <div class="help">
+      <h3>如何获取配置信息？</h3>
+      <ol>
+        <li>访问 <a href="https://turso.tech" target="_blank">turso.tech</a></li>
+        <li>登录并进入你的数据库</li>
+        <li>复制 Database URL</li>
+        <li>创建并复制 Auth Token</li>
+      </ol>
+
+      <h3>使用说明</h3>
+      <ul>
+        <li>点击"测试并保存"会验证连接并自动保存配置</li>
+        <li>使用与tag-all桌面应用相同的数据库</li>
+        <li>确保tag-all已更新到最新版本</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="../lib/libsql-client.js"></script>
+  <script src="config.js"></script>
+</body>
+
+</html>
