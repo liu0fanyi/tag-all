@@ -121,6 +121,11 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
                 .await
                 .map_err(|e| format!("Build failed: {}", e))?;
             let conn = db.connect().map_err(|e| format!("Connect failed: {}", e))?;
+            
+            // Force initial sync to detect conflicts immediately
+            // This ensures our auto-recovery logic (wipe local DB) triggers if the state is invalid
+            db.sync().await.map_err(|e| format!("Initial sync failed: {}", e))?;
+            
             Ok((db, conn))
         }
 
@@ -128,7 +133,7 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
             Ok(pair) => pair,
             Err(e) => {
                 eprintln!("Synced DB init failed: {}", e);
-                if e.contains("local state is incorrect") || e.contains("invalid local state") {
+                if e.contains("local state is incorrect") || e.contains("invalid local state") || e.contains("server returned a conflict") {
                     eprintln!("Detected conflicting local DB state. Recovering...");
                     
                     // Backup conflicting database
