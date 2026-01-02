@@ -17,6 +17,10 @@ pub fn TreeItem(
     item: Item,
     depth: usize,
     has_children: bool,
+    visible_item_ids: Memo<Vec<u32>>,
+    selected_item: ReadSignal<Option<u32>>,
+    selected_items: ReadSignal<Vec<u32>>,
+    set_selected_items: WriteSignal<Vec<u32>>,
     editing_target: ReadSignal<Option<EditTarget>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
     memo_editing_target: ReadSignal<Option<EditTarget>>,
@@ -55,12 +59,58 @@ pub fn TreeItem(
     // Debounce for contextmenu to prevent duplicate events
     let (last_click_time, set_last_click_time) = signal(0f64);
     
-    // Left-click handler - just select item (no editor)
-    let on_click_for_editor = move |_| {
-        set_selected_item.set(Some(id));
+    // Left-click handler - standard multi-select behavior:
+    // - Shift-click: select range from anchor (selected_item) to clicked item
+    // - Ctrl-click: toggle individual item in selection
+    // - Normal click: single select, clear multi-select
+    let on_click_for_editor = move |ev: web_sys::MouseEvent| {
+        if ev.shift_key() {
+            // Shift-click: range selection from anchor to this item
+            let anchor = selected_item.get();
+            if let Some(anchor_id) = anchor {
+                let ids = visible_item_ids.get();
+                let anchor_idx = ids.iter().position(|&x| x == anchor_id);
+                let current_idx = ids.iter().position(|&x| x == id);
+                
+                if let (Some(start), Some(end)) = (anchor_idx, current_idx) {
+                    let (from, to) = if start <= end { (start, end) } else { (end, start) };
+                    let range_ids: Vec<u32> = ids[from..=to].to_vec();
+                    set_selected_items.set(range_ids);
+                }
+            } else {
+                // No anchor yet, just select this item as anchor and add to selection
+                set_selected_item.set(Some(id));
+                set_selected_items.set(vec![id]);
+            }
+        } else if ev.ctrl_key() || ev.meta_key() {
+            // Ctrl-click (or Cmd on Mac): toggle individual item in selection
+            let anchor = selected_item.get();
+            set_selected_items.update(|items| {
+                // If starting multi-select from a single-selected item, include the anchor first
+                if items.is_empty() {
+                    if let Some(anchor_id) = anchor {
+                        if anchor_id != id {
+                            items.push(anchor_id);
+                        }
+                    }
+                }
+                // Toggle the clicked item
+                if items.contains(&id) {
+                    items.retain(|&x| x != id);
+                } else {
+                    items.push(id);
+                }
+            });
+            // Update anchor to this item
+            set_selected_item.set(Some(id));
+        } else {
+            // Normal click: single select, clear multi-select
+            set_selected_item.set(Some(id));
+            set_selected_items.set(Vec::new());
+        }
     };
     
-    // Right-click handler - opens BOTH properties editor AND memo editor
+    // Right-click handler - opens editors based on selection mode
     let text_for_click = text_for_menu.clone();
     let text_for_click2 = text_for_menu.clone();
     let on_context_menu = move |ev: web_sys::MouseEvent| {
@@ -75,29 +125,64 @@ pub fn TreeItem(
         }
         set_last_click_time.set(now);
         
-        set_selected_item.set(Some(id));
+        let current_selected = selected_items.get();
         
-        // Check if already editing this item
-        let current = editing_target.get();
-        let is_editing_this = matches!(&current, Some(EditTarget::Item(eid, _)) if *eid == id);
-        if is_editing_this {
-            // Close both editors
-            set_editing_target.set(None);
-            set_memo_editing_target.set(None);
+        // Check if in multi-select mode (more than 1 item selected)
+        if current_selected.len() > 1 {
+            // Multi-select mode: only open TagEditor with MultiItems target
+            let mut all_selected = current_selected.clone();
+            if !all_selected.contains(&id) {
+                all_selected.push(id);
+                set_selected_items.set(all_selected.clone());
+            }
             
-            // Shrink window
-            spawn_local(async {
-                let _ = commands::shrink_window(800, 700).await;
-            });
+            // Check if already editing these items
+            let current_target = editing_target.get();
+            let is_editing_multi = matches!(&current_target, Some(EditTarget::MultiItems(ids)) if ids == &all_selected);
+            
+            if is_editing_multi {
+                // Close editor
+                set_editing_target.set(None);
+                set_memo_editing_target.set(None);
+                spawn_local(async {
+                    let _ = commands::shrink_window(800, 700).await;
+                });
+            } else {
+                // Open TagEditor only (no MemoEditor for multi-select)
+                set_editing_target.set(Some(EditTarget::MultiItems(all_selected)));
+                set_memo_editing_target.set(None);
+                // Smaller window since no memo editor
+                spawn_local(async {
+                    let _ = commands::resize_window(1200, 700).await;
+                });
+            }
         } else {
-            // Open both editors
-            set_editing_target.set(Some(EditTarget::Item(id, text_for_click.clone())));
-            set_memo_editing_target.set(Some(EditTarget::Item(id, text_for_click2.clone())));
+            // Single-select mode: original behavior
+            set_selected_item.set(Some(id));
+            set_selected_items.set(Vec::new());
             
-            // Expand window
-            spawn_local(async {
-                let _ = commands::resize_window(1800, 700).await;
-            });
+            // Check if already editing this item
+            let current = editing_target.get();
+            let is_editing_this = matches!(&current, Some(EditTarget::Item(eid, _)) if *eid == id);
+            if is_editing_this {
+                // Close both editors
+                set_editing_target.set(None);
+                set_memo_editing_target.set(None);
+                
+                // Shrink window
+                spawn_local(async {
+                    let _ = commands::shrink_window(800, 700).await;
+                });
+            } else {
+                // Open both editors
+                set_editing_target.set(Some(EditTarget::Item(id, text_for_click.clone())));
+                set_memo_editing_target.set(Some(EditTarget::Item(id, text_for_click2.clone())));
+                
+                // Expand window
+                spawn_local(async {
+                    let _ = commands::resize_window(1800, 700).await;
+                });
+            }
         }
     };
     

@@ -144,6 +144,7 @@ pub fn MemoEditorColumn(
         match editing_target.get() {
             Some(EditTarget::Item(_, name)) => format!("备注: {}", name),
             Some(EditTarget::Tag(_, name)) => format!("备注: {}", name),
+            Some(EditTarget::MultiItems(_)) => String::new(), // Not shown for multi-items
             None => String::new(),
         }
     };

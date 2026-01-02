@@ -965,6 +965,35 @@ button {
   outline-offset: -2px;
 }
 
+/* Item multi-selected (Shift-click) */
+.tree-item-wrapper.multi-selected {
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  outline: 2px dashed rgba(139, 92, 246, 0.6);
+  outline-offset: -2px;
+}
+
+/* Common tags section in multi-select editor */
+.common-tags-section {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .common-tags-section {
+    border-top-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.no-common-tags {
+  font-size: 12px;
+  color: #888;
+  text-align: center;
+  padding: 8px;
+  margin: 0;
+}
+
 /* Item being dragged */
 .tree-item-wrapper.dragging {
   opacity: 0.5;
@@ -1551,10 +1580,27 @@ button {
     color: #fff;
   }
 }
+
 /* Sync Button & Animation */
-.titlebar-btn.sync { font-size: 16px; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.animate-spin { animation: spin 1s linear infinite; display: inline-block; }
+.titlebar-btn.sync {
+  font-size: 16px;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
 /* Workspace Edit Form */
 .workspace-edit-form {
   display: flex;

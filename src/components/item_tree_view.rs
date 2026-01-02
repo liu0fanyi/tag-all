@@ -23,6 +23,8 @@ pub fn ItemTreeView(
     items: Memo<Vec<Item>>,
     selected_item: ReadSignal<Option<u32>>,
     set_selected_item: WriteSignal<Option<u32>>,
+    selected_items: ReadSignal<Vec<u32>>,
+    set_selected_items: WriteSignal<Vec<u32>>,
     selected_tags: ReadSignal<Vec<u32>>,
     filter_mode: ReadSignal<FilterMode>,
     sort_mode: ReadSignal<SortMode>,
@@ -136,6 +138,11 @@ pub fn ItemTreeView(
         
         flatten_tree_sorted(&filtered, tree_sort)
     };
+    
+    // Memoized list of visible item IDs (in display order) for range selection
+    let visible_item_ids = Memo::new(move |_| {
+        tree_items().into_iter().map(|(item, _)| item.id).collect::<Vec<u32>>()
+    });
 
     view! {
         <div class="tree-view">
@@ -184,6 +191,7 @@ pub fn ItemTreeView(
                     let item_class = move || {
                         let mut c = String::from("tree-item-wrapper");
                         if is_selected() { c.push_str(" selected"); }
+                        if selected_items.get().contains(&id) { c.push_str(" multi-selected"); }
                         if is_dragging() { c.push_str(" dragging"); }
                         if is_drop_target() { c.push_str(" drop-target"); }
                         c
@@ -201,6 +209,10 @@ pub fn ItemTreeView(
                                 item=item.clone()
                                 depth=depth
                                 has_children=has_children
+                                visible_item_ids=visible_item_ids
+                                selected_item=selected_item
+                                selected_items=selected_items
+                                set_selected_items=set_selected_items
                                 editing_target=editing_target
                                 set_editing_target=set_editing_target
                                 memo_editing_target=memo_editing_target

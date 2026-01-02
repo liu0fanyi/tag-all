@@ -42,6 +42,8 @@ pub fn App() -> impl IntoView {
     let (adding_under, set_adding_under) = signal::<Option<u32>>(None);
     let (reload_trigger, set_reload_trigger) = signal(0u32);
     let (selected_item, set_selected_item) = signal::<Option<u32>>(None);
+    // Multi-select state for shift-click
+    let (selected_items, set_selected_items) = signal(Vec::<u32>::new());
     
     // Tag filtering: multi-select support
     let (selected_tags, set_selected_tags) = signal(Vec::<u32>::new());
@@ -283,6 +285,8 @@ pub fn App() -> impl IntoView {
                     items=items
                     selected_item=selected_item
                     set_selected_item=set_selected_item
+                    selected_items=selected_items
+                    set_selected_items=set_selected_items
                     selected_tags=selected_tags
                     filter_mode=filter_mode
                     sort_mode=sort_mode

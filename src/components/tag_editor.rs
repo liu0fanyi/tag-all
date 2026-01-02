@@ -31,6 +31,8 @@ pub fn TagEditor(
     // Tags
     let (current_tags, set_current_tags) = signal(Vec::<Tag>::new());
     let (all_tags, set_all_tags) = signal(Vec::<Tag>::new());
+    // Common tags across multi-selected items (intersection)
+    let (common_tags, set_common_tags) = signal(Vec::<Tag>::new());
     
     // Load all tags for autocomplete
     Effect::new(move |_| {
@@ -44,28 +46,24 @@ pub fn TagEditor(
     
     // Track which target we're editing to avoid resetting name on reload
     let (last_target_id, set_last_target_id) = signal::<Option<(bool, u32)>>(None); // (is_item, id)
+    // Track multi-item IDs
+    let (last_multi_ids, set_last_multi_ids) = signal::<Vec<u32>>(Vec::new());
     
     // Load current item/tag data when editing target changes OR reload happens
     Effect::new(move |_| {
         // Listen to both editing_target and reload_trigger
         let _ = ctx.reload_trigger.get();
         if let Some(target) = editing_target.get() {
-            let current_target = match &target {
-                EditTarget::Item(id, _) => Some((true, *id)),
-                EditTarget::Tag(id, _) => Some((false, *id)),
-            };
-            
-            // Only reset name if target changed
-            let target_changed = last_target_id.get() != current_target;
-            if target_changed {
-                set_last_target_id.set(current_target);
-            }
-            
             match &target {
                 EditTarget::Item(id, name) => {
+                    let current_target = Some((true, *id));
+                    let target_changed = last_target_id.get() != current_target;
                     if target_changed {
+                        set_last_target_id.set(current_target);
                         set_name_value.set(name.clone());
                     }
+                    set_last_multi_ids.set(Vec::new());
+                    set_common_tags.set(Vec::new());
                     let id = *id;
                     spawn_local(async move {
                         // Get item type and count
@@ -80,10 +78,15 @@ pub fn TagEditor(
                     });
                 }
                 EditTarget::Tag(id, name) => {
+                    let current_target = Some((false, *id));
+                    let target_changed = last_target_id.get() != current_target;
                     if target_changed {
+                        set_last_target_id.set(current_target);
                         set_name_value.set(name.clone());
                     }
                     set_item_type.set(String::new()); // Not applicable for tags
+                    set_last_multi_ids.set(Vec::new());
+                    set_common_tags.set(Vec::new());
                     let id = *id;
                     spawn_local(async move {
                         if let Ok(tags) = commands::get_tag_parents(id).await {
@@ -92,9 +95,50 @@ pub fn TagEditor(
                         }
                     });
                 }
+                EditTarget::MultiItems(ids) => {
+                    set_last_target_id.set(None);
+                    set_name_value.set(String::new());
+                    set_item_type.set(String::new());
+                    set_current_tags.set(Vec::new());
+                    
+                    // Check if target changed
+                    let target_changed = last_multi_ids.get() != *ids;
+                    if target_changed {
+                        set_last_multi_ids.set(ids.clone());
+                    }
+                    
+                    // Compute common tags intersection
+                    let ids_cloned = ids.clone();
+                    spawn_local(async move {
+                        use std::collections::HashSet;
+                        let mut common: Option<HashSet<u32>> = None;
+                        let mut tag_map = std::collections::HashMap::<u32, Tag>::new();
+                        
+                        for item_id in ids_cloned.iter() {
+                            if let Ok(tags) = commands::get_item_tags(*item_id).await {
+                                let tag_ids: HashSet<u32> = tags.iter().map(|t| t.id).collect();
+                                for tag in tags {
+                                    tag_map.insert(tag.id, tag);
+                                }
+                                common = Some(match common {
+                                    Some(c) => c.intersection(&tag_ids).cloned().collect(),
+                                    None => tag_ids,
+                                });
+                            }
+                        }
+                        
+                        let common_tag_ids = common.unwrap_or_default();
+                        let common_tags_list: Vec<Tag> = common_tag_ids.iter()
+                            .filter_map(|id| tag_map.get(id).cloned())
+                            .collect();
+                        set_common_tags.set(common_tags_list);
+                    });
+                }
             }
         } else {
             set_last_target_id.set(None);
+            set_last_multi_ids.set(Vec::new());
+            set_common_tags.set(Vec::new());
         }
     });
     
@@ -120,6 +164,9 @@ pub fn TagEditor(
                         // Increment version to trigger child tag reload in TagTreeNode
                         *store.tags_relation_version().write() += 1;
                     }
+                }
+                EditTarget::MultiItems(_) => {
+                    // Multi-items don't have a single name to save
                 }
             }
         });
@@ -168,7 +215,7 @@ pub fn TagEditor(
                 }
             };
             
-            // Link tag to target
+            // Link tag to target(s)
             match &target {
                 EditTarget::Item(id, _) => {
                     let _ = commands::add_item_tag(*id, tag.id).await;
@@ -182,10 +229,22 @@ pub fn TagEditor(
                         }
                     }
                 }
+                EditTarget::MultiItems(ids) => {
+                    // Batch add tag to all selected items
+                    for item_id in ids.iter() {
+                        let _ = commands::add_item_tag(*item_id, tag.id).await;
+                    }
+                }
             }
             
-            // Fine-grained update: push to local current_tags
+            // Fine-grained update: push to local current_tags (for single item/tag)
             set_current_tags.update(|tags| {
+                if !tags.iter().any(|t| t.id == tag.id) {
+                    tags.push(tag.clone());
+                }
+            });
+            // For multi-items, also add to common_tags since it's now common to all
+            set_common_tags.update(|tags| {
                 if !tags.iter().any(|t| t.id == tag.id) {
                     tags.push(tag);
                 }
@@ -213,9 +272,19 @@ pub fn TagEditor(
                         *store.root_tags().write() = loaded;
                     }
                 }
+                EditTarget::MultiItems(ids) => {
+                    // Batch remove tag from all selected items
+                    for item_id in ids.iter() {
+                        let _ = commands::remove_item_tag(*item_id, tag_id).await;
+                    }
+                }
             }
             // Fine-grained update: remove from local current_tags
             set_current_tags.update(|tags| {
+                tags.retain(|t| t.id != tag_id);
+            });
+            // Also remove from common_tags for multi-items
+            set_common_tags.update(|tags| {
                 tags.retain(|t| t.id != tag_id);
             });
             // Trigger tag child reload
@@ -230,11 +299,58 @@ pub fn TagEditor(
 
     view! {
         {move || match editing_target.get() {
+            Some(EditTarget::MultiItems(ids)) => {
+                // Multi-select mode: tag-only editor with common tags
+                let count = ids.len();
+                view! {
+                    <div class="tag-editor-column">
+                        <div class="tag-editor-header">
+                            <span class="tag-editor-title">{format!("编辑 {} 个项目", count)}</span>
+                            <button class="close-btn" on:click=move |_| set_editing_target.set(None)>"×"</button>
+                        </div>
+                        
+                        // Tag input section
+                        <div class="editor-section">
+                            <label class="editor-label">"添加标签"</label>
+                            <TagAutocomplete 
+                                all_tags=all_tags
+                                on_select=add_tag_by_name.clone()
+                            />
+                        </div>
+                        
+                        // Common tags section (intersection of all selected items' tags)
+                        <div class="editor-section common-tags-section">
+                            <label class="editor-label">"共同标签"</label>
+                            <div class="current-tags-list">
+                                <For
+                                    each=move || common_tags.get()
+                                    key=|tag| tag.id
+                                    children=move |tag| {
+                                        let tag_id = tag.id;
+                                        let color = tag.color.clone().unwrap_or_else(|| "#666".to_string());
+                                        view! {
+                                            <div class="current-tag-item">
+                                                <span class="tag-color-dot" style=format!("background-color: {};", color)></span>
+                                                <span class="current-tag-name">{tag.name}</span>
+                                                <button class="remove-tag-btn" on:click=move |_| remove_tag(tag_id)>"×"</button>
+                                            </div>
+                                        }
+                                    }
+                                />
+                            </div>
+                            <Show when=move || common_tags.get().is_empty()>
+                                <p class="no-common-tags">"无共同标签"</p>
+                            </Show>
+                        </div>
+                    </div>
+                }.into_any()
+            }
             Some(target) => {
                 let is_item = matches!(&target, EditTarget::Item(_, _));
                 let title = match &target {
                     EditTarget::Item(_, _) => "编辑 Item",
                     EditTarget::Tag(_, _) => "编辑 Tag",
+                    _ => "",
                 };
                 
                 view! {
@@ -333,7 +449,7 @@ pub fn TagEditor(
                             <label class="editor-label">"添加标签"</label>
                             <TagAutocomplete 
                                 all_tags=all_tags
-                                on_select=add_tag_by_name
+                                on_select=add_tag_by_name.clone()
                             />
                         </div>
                         
