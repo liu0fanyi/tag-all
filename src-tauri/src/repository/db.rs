@@ -21,6 +21,8 @@ pub struct BackupData {
     pub items: Vec<serde_json::Value>,
     pub tags: Vec<serde_json::Value>,
     pub workspaces: Vec<serde_json::Value>,
+    pub item_tags: Vec<serde_json::Value>,
+    pub tag_tags: Vec<serde_json::Value>,
 }
 
 
@@ -345,52 +347,62 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
 // Data Backup and Restore
 // ============================================================================
 
+
 /// Backup all data from current database
 pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> {
     // Backup items
-    let mut items_stmt = conn.prepare("SELECT * FROM items").await.map_err(|e| e.to_string())?;
+    // Explicitly select columns to ensure order and completeness
+    let mut items_stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id FROM items").await.map_err(|e| e.to_string())?;
     let mut items_rows = items_stmt.query(()).await.map_err(|e| e.to_string())?;
     let mut items = Vec::new();
     while let Ok(Some(row)) = items_rows.next().await {
         let id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let text: String = row.get(1).map_err(|e| e.to_string())?;
-        let item_type: String = row.get(2).map_err(|e| e.to_string())?;
-        let parent_id: Option<i64> = row.get(3).ok();
-        let position: i32 = row.get(4).map_err(|e| e.to_string())?;
-        let workspace_id: i64 = row.get(5).map_err(|e| e.to_string())?;
+        let completed: i64 = row.get(2).map_err(|e| e.to_string())?;
+        let item_type: String = row.get(3).map_err(|e| e.to_string())?;
+        let memo: Option<String> = row.get(4).ok();
+        let target_count: Option<i64> = row.get(5).ok();
+        let current_count: i64 = row.get(6).map_err(|e| e.to_string())?;
+        let parent_id: Option<i64> = row.get(7).ok();
+        let position: i64 = row.get(8).map_err(|e| e.to_string())?;
+        let collapsed: i64 = row.get(9).map_err(|e| e.to_string())?;
+        let workspace_id: i64 = row.get(10).map_err(|e| e.to_string())?;
         
         items.push(serde_json::json!({
             "id": id,
             "text": text,
+            "completed": completed,
             "item_type": item_type,
+            "memo": memo,
+            "target_count": target_count,
+            "current_count": current_count,
             "parent_id": parent_id,
             "position": position,
+            "collapsed": collapsed,
             "workspace_id": workspace_id
         }));
     }
     
     // Backup tags
-    let mut tags_stmt = conn.prepare("SELECT * FROM tags").await.map_err(|e| e.to_string())?;
+    let mut tags_stmt = conn.prepare("SELECT id, name, color, position FROM tags").await.map_err(|e| e.to_string())?;
     let mut tags_rows = tags_stmt.query(()).await.map_err(|e| e.to_string())?;
     let mut tags = Vec::new();
     while let Ok(Some(row)) = tags_rows.next().await {
         let id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let name: String = row.get(1).map_err(|e| e.to_string())?;
-        let color: String = row.get(2).map_err(|e| e.to_string())?;
-        let parent_id: Option<i64> = row.get(3).ok();
-        let position: i32 = row.get(4).map_err(|e| e.to_string())?;
+        let color: Option<String> = row.get(2).ok();
+        let position: i64 = row.get(3).map_err(|e| e.to_string())?;
         
         tags.push(serde_json::json!({
             "id": id,
             "name": name,
             "color": color,
-            "parent_id": parent_id,
             "position": position
         }));
     }
     
     // Backup workspaces
-    let mut ws_stmt = conn.prepare("SELECT * FROM workspaces").await.map_err(|e| e.to_string())?;
+    let mut ws_stmt = conn.prepare("SELECT id, name FROM workspaces").await.map_err(|e| e.to_string())?;
     let mut ws_rows = ws_stmt.query(()).await.map_err(|e| e.to_string())?;
     let mut workspaces = Vec::new();
     while let Ok(Some(row)) = ws_rows.next().await {
@@ -402,17 +414,47 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
             "name": name
         }));
     }
+
+    // Backup item_tags
+    let mut item_tags_stmt = conn.prepare("SELECT item_id, tag_id FROM item_tags").await.map_err(|e| e.to_string())?;
+    let mut item_tags_rows = item_tags_stmt.query(()).await.map_err(|e| e.to_string())?;
+    let mut item_tags = Vec::new();
+    while let Ok(Some(row)) = item_tags_rows.next().await {
+        let item_id: i64 = row.get(0).map_err(|e| e.to_string())?;
+        let tag_id: i64 = row.get(1).map_err(|e| e.to_string())?;
+        
+        item_tags.push(serde_json::json!({
+            "item_id": item_id,
+            "tag_id": tag_id
+        }));
+    }
+
+    // Backup tag_tags
+    let mut tag_tags_stmt = conn.prepare("SELECT child_tag_id, parent_tag_id, position FROM tag_tags").await.map_err(|e| e.to_string())?;
+    let mut tag_tags_rows = tag_tags_stmt.query(()).await.map_err(|e| e.to_string())?;
+    let mut tag_tags = Vec::new();
+    while let Ok(Some(row)) = tag_tags_rows.next().await {
+        let child_tag_id: i64 = row.get(0).map_err(|e| e.to_string())?;
+        let parent_tag_id: i64 = row.get(1).map_err(|e| e.to_string())?;
+        let position: i64 = row.get(2).map_err(|e| e.to_string())?;
+        
+        tag_tags.push(serde_json::json!({
+            "child_tag_id": child_tag_id,
+            "parent_tag_id": parent_tag_id,
+            "position": position
+        }));
+    }
     
-    eprintln!("Backup complete: {} items, {} tags, {} workspaces", 
-              items.len(), tags.len(), workspaces.len());
+    eprintln!("Backup complete: {} items, {} tags, {} workspaces, {} item_tags, {} tag_tags", 
+              items.len(), tags.len(), workspaces.len(), item_tags.len(), tag_tags.len());
     
-    Ok(BackupData { items, tags, workspaces })
+    Ok(BackupData { items, tags, workspaces, item_tags, tag_tags })
 }
 
 /// Restore data to database
 pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), String> {
-    eprintln!("Restoring data: {} items, {} tags, {} workspaces",
-              backup.items.len(), backup.tags.len(), backup.workspaces.len());
+    eprintln!("Restoring data: {} items, {} tags, {} workspaces, {} item_tags, {} tag_tags",
+              backup.items.len(), backup.tags.len(), backup.workspaces.len(), backup.item_tags.len(), backup.tag_tags.len());
     
     // Restore workspaces first
     for ws in backup.workspaces {
@@ -428,13 +470,14 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
     for tag in backup.tags {
         let id = tag["id"].as_i64().unwrap();
         let name = tag["name"].as_str().unwrap();
-        let color = tag["color"].as_str().unwrap();
-        let parent_id = tag["parent_id"].as_i64();
-        let position = tag["position"].as_i64().unwrap();
+        let color = tag["color"].as_str(); // Option<String>
+        let position = tag["position"].as_i64().unwrap_or(0);
         
+        // Handle explicit null for color if needed, params! handles Option nicely usually but let's be explicit if needed
+        // libsql params! macro should handle Option<&str> correctly as NULL if None
         conn.execute(
-            "INSERT OR REPLACE INTO tags (id, name, color, parent_id, position) VALUES (?, ?, ?, ?, ?)",
-            libsql::params![id, name, color, parent_id, position]
+            "INSERT OR REPLACE INTO tags (id, name, color, position) VALUES (?, ?, ?, ?)",
+            libsql::params![id, name, color, position]
         ).await.map_err(|e| e.to_string())?;
     }
     
@@ -442,14 +485,43 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
     for item in backup.items {
         let id = item["id"].as_i64().unwrap();
         let text = item["text"].as_str().unwrap();
+        let completed = item["completed"].as_i64().unwrap_or(0);
         let item_type = item["item_type"].as_str().unwrap();
+        let memo = item["memo"].as_str();
+        let target_count = item["target_count"].as_i64();
+        let current_count = item["current_count"].as_i64().unwrap_or(0);
         let parent_id = item["parent_id"].as_i64();
-        let position = item["position"].as_i64().unwrap();
-        let workspace_id = item["workspace_id"].as_i64().unwrap();
+        let position = item["position"].as_i64().unwrap_or(0);
+        let collapsed = item["collapsed"].as_i64().unwrap_or(0);
+        let workspace_id = item["workspace_id"].as_i64().unwrap_or(1);
         
         conn.execute(
-            "INSERT OR REPLACE INTO items (id, text, item_type, parent_id, position, workspace_id) VALUES (?, ?, ?, ?, ?, ?)",
-            libsql::params![id, text, item_type, parent_id, position, workspace_id]
+            "INSERT OR REPLACE INTO items (id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            libsql::params![id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id]
+        ).await.map_err(|e| e.to_string())?;
+    }
+
+    // Restore item_tags
+    for it in backup.item_tags {
+        let item_id = it["item_id"].as_i64().unwrap();
+        let tag_id = it["tag_id"].as_i64().unwrap();
+        
+        conn.execute(
+            "INSERT OR REPLACE INTO item_tags (item_id, tag_id) VALUES (?, ?)",
+            libsql::params![item_id, tag_id]
+        ).await.map_err(|e| e.to_string())?;
+    }
+
+    // Restore tag_tags
+    for tt in backup.tag_tags {
+        let child_tag_id = tt["child_tag_id"].as_i64().unwrap();
+        let parent_tag_id = tt["parent_tag_id"].as_i64().unwrap();
+        let position = tt["position"].as_i64().unwrap_or(0);
+        
+        conn.execute(
+            "INSERT OR REPLACE INTO tag_tags (child_tag_id, parent_tag_id, position) VALUES (?, ?, ?)",
+            libsql::params![child_tag_id, parent_tag_id, position]
         ).await.map_err(|e| e.to_string())?;
     }
     
