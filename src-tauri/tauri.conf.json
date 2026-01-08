@@ -5,7 +5,7 @@
   "identifier": "com.tag-all.app",
   "build": {
     "beforeDevCommand": "trunk serve",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1437",
     "beforeBuildCommand": "trunk build",
     "frontendDist": "../dist"
   },

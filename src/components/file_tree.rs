@@ -3,6 +3,7 @@ use leptos::task::spawn_local;
 use crate::commands;
 use crate::models::{WorkspaceDir, FileViewItem, Tag};
 use crate::components::{TagDndContext, EditTarget};
+use crate::store::AppStateStoreFields;
 use leptos_dragdrop::{make_on_mouseleave, make_on_file_mouseenter, DropTarget};
 
 #[component]
@@ -82,7 +83,10 @@ fn FileTreeRow(
     let dir_path = dir.path.clone();
     let load_files = move || {
         let path = dir_path.clone();
-        set_loading.set(true);
+        // Only show loading state on first load to prevent UI flash
+        if !loaded_once.get_untracked() {
+             set_loading.set(true);
+        }
         
         spawn_local(async move {
              match commands::list_directory(&path).await {
@@ -152,10 +156,18 @@ fn FileTreeRow(
     // Global reload trigger listener
     let ctx = use_context::<crate::context::AppContext>().expect("AppContext");
     let reload_trigger = ctx.reload_trigger;
+    
+    // Store for fine-grained updates
+    let store = crate::store::use_app_store();
+    let tags_version = store.tags_relation_version();
+
     let load_files_reload = load_files.clone();
     Effect::new(move |_| {
+        // Track both global reload and tag relationship changes
         let _ = reload_trigger.get();
-        // Use untracked to avoid reacting to these changes, only reload_trigger
+        let _ = tags_version.get();
+        
+        // Use untracked to avoid reacting to these changes, only reload_trigger/tags_version
         if !collapsed.get_untracked() && loaded_once.get_untracked() {
              load_files_reload();
         }
@@ -210,7 +222,7 @@ fn FileTreeRow(
                      <Show when=move || !loading.get() fallback=|| view! { <div class="loading small">"Loading..."</div> }>
                         <For
                             each=move || files.get()
-                            key=|f| f.path.clone()
+                            key=|f| format!("{}::{:?}", f.path, f.tags)
                             children=move |file| {
                                 let file_path = file.path.clone();
                                 let file_path_for_drop = file_path.clone();

@@ -6,5 +6,5 @@ no_sri = true
 ignore = ["./src-tauri"]
 
 [serve]
-port = 1420
+port = 1437
 open = false
