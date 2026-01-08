@@ -80,6 +80,13 @@ pub struct Item {
     pub summary: Option<String>,
     pub created_at: Option<i64>,
     pub updated_at: Option<i64>,
+
+    // Level 7 fields:
+    pub content_hash: Option<String>,
+    pub quick_hash: Option<String>,
+    pub last_known_path: Option<String>,
+    #[serde(default)]
+    pub is_dir: bool,
 }
 
 impl Item {
@@ -100,6 +107,10 @@ impl Item {
             summary: None,
             created_at: None,
             updated_at: None,
+            content_hash: None,
+            quick_hash: None,
+            last_known_path: None,
+            is_dir: false,
         }
     }
 
@@ -120,6 +131,10 @@ impl Item {
             summary: None,
             created_at: None,
             updated_at: None,
+            content_hash: None,
+            quick_hash: None,
+            last_known_path: None,
+            is_dir: false,
         }
     }
 

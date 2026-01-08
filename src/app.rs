@@ -6,11 +6,11 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use reactive_stores::Store;
 
-use crate::models::{Item, Tag, Workspace};
+use crate::models::{Item, Tag, Workspace, FileViewItem};
 use crate::commands;
 use crate::context::AppContext;
 use crate::store::{AppState, AppStateStoreFields};
-use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn, TitleBar, SyncModal};
+use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn, TitleBar, SyncModal, FilesWorkspace, TagDndContext};
 
 /// Filter mode for tag-based item filtering
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -33,6 +33,10 @@ pub fn App() -> impl IntoView {
     // Create and provide the global store
     let store = Store::new(AppState::new());
     provide_context(store);
+    
+    // Create and provide DnD context for Tags (used by TagColumn and FileList)
+    let tag_dnd = TagDndContext::new();
+    provide_context(tag_dnd);
     
     // Derived signals from store for compatibility
     let items = Memo::new(move |_| store.items().get());
@@ -59,6 +63,9 @@ pub fn App() -> impl IntoView {
     
     // Pin state (always on top)
     let (is_pinned, set_is_pinned) = signal(false);
+    
+    // Files Workspace Selection
+    let (selected_file, set_selected_file) = signal::<Option<FileViewItem>>(None);
     
     // Sync state
     let (sync_url, set_sync_url) = signal(String::new());
@@ -226,77 +233,83 @@ pub fn App() -> impl IntoView {
                         set_current_workspace=set_current_workspace
                     />
                     
-                    <h1>"Tag-All"</h1>
+
                 
                 // Filter mode toggle (shown when tags are selected)
-                <Show when=move || !selected_tags.get().is_empty()>
-                    <div class="filter-bar">
-                        <span class="filter-label">"筛选:"</span>
-                        <button 
-                            class=move || if filter_mode.get() == FilterMode::And { "filter-btn active" } else { "filter-btn" }
-                            on:click=toggle_filter_mode
+                <Show when=move || current_workspace.get() == 2 fallback=move || view! {
+                    <Show when=move || !selected_tags.get().is_empty()>
+                        <div class="filter-bar">
+                            <span class="filter-label">"筛选:"</span>
+                            <button 
+                                class=move || if filter_mode.get() == FilterMode::And { "filter-btn active" } else { "filter-btn" }
+                                on:click=toggle_filter_mode
+                            >
+                                {move || if filter_mode.get() == FilterMode::And { "AND" } else { "OR" }}
+                            </button>
+                            <button class="filter-clear-btn" on:click=clear_filter>"清除"</button>
+                        </div>
+                    </Show>
+                    
+                    <NewItemForm />
+                    
+                    <div class="sort-bar">
+                        <button
+                            class=move || if sort_mode.get() == SortMode::NameFirst { "sort-btn active" } else { "sort-btn" }
+                            on:click=move |_| {
+                                set_sort_mode.update(|m| {
+                                    *m = if *m == SortMode::NameFirst { SortMode::Position } else { SortMode::NameFirst };
+                                });
+                            }
                         >
-                            {move || if filter_mode.get() == FilterMode::And { "AND" } else { "OR" }}
+                            "未完成优先"
                         </button>
-                        <button class="filter-clear-btn" on:click=clear_filter>"清除"</button>
+                        <button
+                            class=move || if sort_mode.get() == SortMode::TagFirst { "sort-btn active" } else { "sort-btn" }
+                            on:click=move |_| {
+                                set_sort_mode.update(|m| {
+                                    *m = if *m == SortMode::TagFirst { SortMode::Position } else { SortMode::TagFirst };
+                                });
+                            }
+                        >
+                            "按标签排序"
+                        </button>
+                        <button
+                            class="sort-btn reset"
+                            title="重置所有已完成的任务"
+                            on:click=move |_| {
+                                let ws = current_workspace.get();
+                                spawn_local(async move {
+                                    let _ = commands::reset_all_items(ws).await;
+                                });
+                                set_reload_trigger.update(|n| *n += 1);
+                            }
+                        >
+                            "🔄 重置"
+                        </button>
                     </div>
+                    
+                    <ItemTreeView
+                        items=items
+                        selected_item=selected_item
+                        set_selected_item=set_selected_item
+                        selected_items=selected_items
+                        set_selected_items=set_selected_items
+                        selected_tags=selected_tags
+                        filter_mode=filter_mode
+                        sort_mode=sort_mode
+                        editing_target=editing_target
+                        set_editing_target=set_editing_target
+                        memo_editing_target=memo_editing_target
+                        set_memo_editing_target=set_memo_editing_target
+                    />
+                    
+                    <p class="item-count">{move || format!("{} items, {} tags", items.get().len(), tags.get().len())}</p>
+                }>
+                    <FilesWorkspace 
+                        set_selected_file=set_selected_file 
+                        set_editing_target=set_editing_target
+                    />
                 </Show>
-                
-                <NewItemForm />
-                
-                // Sort toggle buttons
-                <div class="sort-bar">
-                    <button
-                        class=move || if sort_mode.get() == SortMode::NameFirst { "sort-btn active" } else { "sort-btn" }
-                        on:click=move |_| {
-                            set_sort_mode.update(|m| {
-                                *m = if *m == SortMode::NameFirst { SortMode::Position } else { SortMode::NameFirst };
-                            });
-                        }
-                    >
-                        "未完成优先"
-                    </button>
-                    <button
-                        class=move || if sort_mode.get() == SortMode::TagFirst { "sort-btn active" } else { "sort-btn" }
-                        on:click=move |_| {
-                            set_sort_mode.update(|m| {
-                                *m = if *m == SortMode::TagFirst { SortMode::Position } else { SortMode::TagFirst };
-                            });
-                        }
-                    >
-                        "按标签排序"
-                    </button>
-                    <button
-                        class="sort-btn reset"
-                        title="重置所有已完成的任务"
-                        on:click=move |_| {
-                            let ws = current_workspace.get();
-                            spawn_local(async move {
-                                let _ = commands::reset_all_items(ws).await;
-                            });
-                            set_reload_trigger.update(|n| *n += 1);
-                        }
-                    >
-                        "🔄 重置"
-                    </button>
-                </div>
-                
-                <ItemTreeView
-                    items=items
-                    selected_item=selected_item
-                    set_selected_item=set_selected_item
-                    selected_items=selected_items
-                    set_selected_items=set_selected_items
-                    selected_tags=selected_tags
-                    filter_mode=filter_mode
-                    sort_mode=sort_mode
-                    editing_target=editing_target
-                    set_editing_target=set_editing_target
-                    memo_editing_target=memo_editing_target
-                    set_memo_editing_target=set_memo_editing_target
-                />
-                
-                <p class="item-count">{move || format!("{} items, {} tags", items.get().len(), tags.get().len())}</p>
             </main>
             
             // Right: Tag Editor (shown on right-click)

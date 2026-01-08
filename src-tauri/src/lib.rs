@@ -36,6 +36,7 @@ fn get_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
             
@@ -112,10 +113,19 @@ pub fn run() {
             commands::create_workspace,
             commands::delete_workspace,
             commands::rename_workspace,
+            commands::list_workspace_paths,
+            commands::add_workspace_path,
+            commands::remove_workspace_path,
+            commands::toggle_workspace_dir_collapsed,
             // Cloud Sync
             commands::configure_cloud_sync,
             commands::get_cloud_sync_config,
             commands::sync_cloud_db,
+            // Level 7: Files
+            commands::list_directory,
+            commands::ensure_file_item,
+            commands::pick_folder,
+            commands::open_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

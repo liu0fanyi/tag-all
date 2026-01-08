@@ -23,6 +23,48 @@ impl ItemRepository {
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
         Self { conn }
     }
+
+    pub async fn find_by_last_known_path(&self, path: &str) -> DomainResult<Option<Item>> {
+        let conn = self.conn.lock().await;
+        let mut rows = conn.query(
+            "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE last_known_path = ?",
+            libsql::params![path],
+        ).await.map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            Ok(Some(row_to_item(&row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn find_by_quick_hash(&self, quick_hash: &str, is_dir: bool) -> DomainResult<Option<Item>> {
+        let conn = self.conn.lock().await;
+        let mut rows = conn.query(
+            "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE quick_hash = ? AND is_dir = ?",
+            libsql::params![quick_hash, if is_dir { 1 } else { 0 }],
+        ).await.map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            Ok(Some(row_to_item(&row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn find_by_content_hash(&self, content_hash: &str) -> DomainResult<Option<Item>> {
+        let conn = self.conn.lock().await;
+        let mut rows = conn.query(
+            "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE content_hash = ?",
+            libsql::params![content_hash],
+        ).await.map_err(|e| DomainError::Internal(e.to_string()))?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            Ok(Some(row_to_item(&row)?))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[async_trait]
@@ -38,7 +80,7 @@ impl Repository<Item> for ItemRepository {
         
         let mut rows = conn
             .query(
-                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at FROM items WHERE id = ?",
+                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE id = ?",
                 libsql::params![id],
             )
             .await
@@ -56,7 +98,7 @@ impl Repository<Item> for ItemRepository {
         
         let mut rows = conn
             .query(
-                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at FROM items ORDER BY parent_id NULLS FIRST, position ASC",
+                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items ORDER BY parent_id NULLS FIRST, position ASC",
                 (),
             )
             .await
@@ -80,9 +122,10 @@ impl Repository<Item> for ItemRepository {
         let collapsed = if entity.collapsed { 1 } else { 0 };
         let url = entity.url.clone();
         let summary = entity.summary.clone();
+        let is_dir = if entity.is_dir { 1 } else { 0 };
         
         conn.execute(
-            "UPDATE items SET text = ?, completed = ?, item_type = ?, memo = ?, target_count = ?, current_count = ?, parent_id = ?, position = ?, collapsed = ?, url = ?, summary = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
+            "UPDATE items SET text = ?, completed = ?, item_type = ?, memo = ?, target_count = ?, current_count = ?, parent_id = ?, position = ?, collapsed = ?, url = ?, summary = ?, content_hash = ?, quick_hash = ?, last_known_path = ?, is_dir = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
             libsql::params![
                 text,
                 completed,
@@ -95,6 +138,10 @@ impl Repository<Item> for ItemRepository {
                 collapsed,
                 url,
                 summary,
+                entity.content_hash.clone(),
+                entity.quick_hash.clone(),
+                entity.last_known_path.clone(),
+                is_dir,
                 entity.id
             ],
         )
@@ -150,5 +197,9 @@ pub(super) fn row_to_item(row: &libsql::Row) -> DomainResult<Item> {
         summary: row.get::<Option<String>>(11).ok().flatten(),
         created_at: row.get::<Option<i64>>(12).ok().flatten(),
         updated_at: row.get::<Option<i64>>(13).ok().flatten(),
+        content_hash: row.get::<Option<String>>(14).ok().flatten(),
+        quick_hash: row.get::<Option<String>>(15).ok().flatten(),
+        last_known_path: row.get::<Option<String>>(16).ok().flatten(),
+        is_dir: row.get::<i32>(17).unwrap_or(0) != 0,
     })
 }

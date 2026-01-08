@@ -367,6 +367,9 @@ pub fn TagEditor(
                                 <input
                                     type="text"
                                     class="name-edit-input"
+                                    class:disabled-input=move || item_type.get() == "document"
+                                    prop:disabled=move || item_type.get() == "document"
+                                    title=move || if item_type.get() == "document" { "文件名称不可修改" } else { "" }
                                     prop:value=move || name_value.get()
                                     on:input=move |ev| {
                                         let target = ev.target().unwrap();

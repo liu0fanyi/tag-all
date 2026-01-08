@@ -34,3 +34,29 @@ pub struct Workspace {
     pub id: u32,
     pub name: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceDir {
+    pub id: u32,
+    pub workspace_id: u32,
+    pub path: String,
+    #[serde(default = "default_true")]
+    pub collapsed: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileViewItem {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub last_modified: u64,
+    pub quick_hash: String,
+    pub db_item: Option<Item>,
+    #[serde(default)]
+    pub tags: Vec<Tag>,
+}

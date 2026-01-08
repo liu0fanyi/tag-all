@@ -7,16 +7,18 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 /// Drop target types
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DropTarget {
     /// Drop on an item (become child)
     Item(u32),
     /// Drop on a zone between items (parent_id, position)
     Zone(Option<u32>, i32),
+    /// Drop on a file (path)
+    File(String),
 }
 
 /// Computed drop action
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct DropAction {
     pub target: Option<DropTarget>,
 }
@@ -68,18 +70,25 @@ pub fn create_dnd_signals() -> DndSignals {
 
 /// End drag operation
 pub fn end_drag(dnd: &DndSignals) {
-    dnd.dragging_id_write.set(None);
-    dnd.drop_target_write.set(None);
-    dnd.pending_id_write.set(None);
-    dnd.drag_just_ended_write.set(true);
-    
-    if let Some(win) = web_sys::window() {
-        let clear = dnd.drag_just_ended_write;
-        let cb = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
-            clear.set(false);
-        });
-        let _ = win.set_timeout_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), 100);
-        cb.forget();
+    if dnd.dragging_id_read.try_get_untracked().is_some() {
+        dnd.dragging_id_write.set(None);
+        dnd.drop_target_write.set(None);
+        dnd.pending_id_write.set(None);
+        dnd.drag_just_ended_write.set(true);
+        
+        if let Some(win) = web_sys::window() {
+            let clear = dnd.drag_just_ended_write;
+            // Capture checking closure to avoid panic in timeout
+            let check = dnd.drag_just_ended_read;
+            
+            let cb = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
+                if check.try_get_untracked().is_some() {
+                    clear.set(false);
+                }
+            });
+            let _ = win.set_timeout_with_callback_and_timeout_and_arguments_0(cb.as_ref().unchecked_ref(), 100);
+            cb.forget();
+        }
     }
 }
 
@@ -103,31 +112,23 @@ pub fn make_on_mousedown(dnd: DndSignals, item_id: u32) -> impl Fn(web_sys::Mous
 
 /// Create mousemove handler for document - starts drag if moved enough
 pub fn bind_global_mousemove(dnd: DndSignals) {
-    use wasm_bindgen::closure::Closure;
-    
-    let on_mousemove = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |ev: web_sys::MouseEvent| {
-        let pending = dnd.pending_id_read.get_untracked();
-        
-        // If we have a pending drag and haven't started dragging yet
-        if pending.is_some() && dnd.dragging_id_read.get_untracked().is_none() {
-            let start_x = dnd.start_x_read.get_untracked();
-            let start_y = dnd.start_y_read.get_untracked();
-            let dx = (ev.client_x() - start_x).abs();
-            let dy = (ev.client_y() - start_y).abs();
-            
-            // Start dragging if moved beyond threshold
-            if dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX {
-                dnd.dragging_id_write.set(pending);
+    let _ = window_event_listener(leptos::ev::mousemove, move |ev: web_sys::MouseEvent| {
+        // Use try_get_untracked to avoid panic if signal is disposed
+        if let Some(pending) = dnd.pending_id_read.try_get_untracked() {
+             // If we have a pending drag and haven't started dragging yet
+            if pending.is_some() && dnd.dragging_id_read.try_get_untracked().flatten().is_none() {
+                if let (Some(start_x), Some(start_y)) = (dnd.start_x_read.try_get_untracked(), dnd.start_y_read.try_get_untracked()) {
+                    let dx = (ev.client_x() - start_x).abs();
+                    let dy = (ev.client_y() - start_y).abs();
+                    
+                    // Start dragging if moved beyond threshold
+                    if dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX {
+                        dnd.dragging_id_write.set(pending);
+                    }
+                }
             }
         }
     });
-    
-    if let Some(win) = web_sys::window() {
-        if let Some(doc) = win.document() {
-            let _ = doc.add_event_listener_with_callback("mousemove", on_mousemove.as_ref().unchecked_ref());
-        }
-    }
-    on_mousemove.forget();
 }
 
 /// Create mouseenter handler for items (become child target)
@@ -139,6 +140,15 @@ pub fn make_on_item_mouseenter(dnd: DndSignals, item_id: u32) -> impl Fn(web_sys
             if dragging != item_id {
                 dnd.drop_target_write.set(Some(DropTarget::Item(item_id)));
             }
+        }
+    }
+}
+
+/// Create mouseenter handler for files
+pub fn make_on_file_mouseenter(dnd: DndSignals, path: String) -> impl Fn(web_sys::MouseEvent) + 'static {
+    move |_ev: web_sys::MouseEvent| {
+        if dnd.dragging_id_read.get_untracked().is_some() {
+            dnd.drop_target_write.set(Some(DropTarget::File(path.clone())));
         }
     }
 }
@@ -166,15 +176,16 @@ pub fn bind_global_mouseup<F>(dnd: DndSignals, on_drop: F)
 where
     F: Fn(u32, DropTarget) + Clone + 'static,
 {
-    use wasm_bindgen::closure::Closure;
-    
-    let on_mouseup = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |_ev: web_sys::MouseEvent| {
-        let dragging_id = dnd.dragging_id_read.get_untracked();
-        let drop_target = dnd.drop_target_read.get_untracked();
+    let _ = window_event_listener(leptos::ev::mouseup, move |_ev: web_sys::MouseEvent| {
+        // Use try_get_untracked to avoid panic
+        let dragging_id = dnd.dragging_id_read.try_get_untracked().flatten();
+        let drop_target = dnd.drop_target_read.try_get_untracked().flatten();
         
-        // Clear pending state first
-        dnd.pending_id_write.set(None);
-        
+        // Check if signal system is still active (using a read signal as proxy)
+        if dnd.dragging_id_read.try_get_untracked().is_some() {
+             dnd.pending_id_write.set(None);
+        }
+
         // If we were actually dragging (not just clicking)
         if let (Some(dragged), Some(target)) = (dragging_id, drop_target) {
             end_drag(&dnd);
@@ -185,14 +196,7 @@ where
             // Click event will fire naturally on the element
         }
     });
-    
-    if let Some(win) = web_sys::window() {
-        if let Some(doc) = win.document() {
-            let _ = doc.add_event_listener_with_callback("mouseup", on_mouseup.as_ref().unchecked_ref());
-        }
-    }
-    on_mouseup.forget();
-    
+
     // Also bind global mousemove
     bind_global_mousemove(dnd);
 }

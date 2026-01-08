@@ -26,7 +26,7 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
         
         let mut rows = conn
             .query(
-                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at FROM items WHERE workspace_id = ? ORDER BY parent_id NULLS FIRST, position ASC",
+                "SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE workspace_id = ? ORDER BY parent_id NULLS FIRST, position ASC",
                 libsql::params![workspace_id],
             )
             .await
@@ -63,9 +63,11 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
         } else {
             entity.position
         };
+
+        let is_dir = if entity.is_dir { 1 } else { 0 };
         
         conn.execute(
-            "INSERT INTO items (text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))",
+            "INSERT INTO items (text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, content_hash, quick_hash, last_known_path, is_dir, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))",
             libsql::params![
                 entity.text.clone(),
                 if entity.completed { 1 } else { 0 },
@@ -78,7 +80,11 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
                 if entity.collapsed { 1 } else { 0 },
                 workspace_id,
                 entity.url.clone(),
-                entity.summary.clone()
+                entity.summary.clone(),
+                entity.content_hash.clone(),
+                entity.quick_hash.clone(),
+                entity.last_known_path.clone(),
+                is_dir
             ],
         )
         .await

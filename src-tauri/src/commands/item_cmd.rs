@@ -97,6 +97,10 @@ pub async fn update_item(
         summary: existing.summary,
         created_at: existing.created_at,
         updated_at: existing.updated_at,
+        content_hash: existing.content_hash,
+        quick_hash: existing.quick_hash,
+        last_known_path: existing.last_known_path,
+        is_dir: existing.is_dir,
     };
     
     repo.update(&updated).await.map_err(|e| e.to_string())

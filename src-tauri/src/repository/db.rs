@@ -297,6 +297,34 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Failed to add updated_at: {}", e))?;
     }
 
+    // Level 7: File Management fields (content_hash, quick_hash, last_known_path, is_dir)
+    if !column_exists(conn, "items", "content_hash").await {
+        conn.execute("ALTER TABLE items ADD COLUMN content_hash TEXT", ())
+            .await
+            .map_err(|e| format!("Failed to add content_hash: {}", e))?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_content_hash ON items(content_hash)", ()).await.map_err(|e| e.to_string())?;
+    }
+
+    if !column_exists(conn, "items", "quick_hash").await {
+        conn.execute("ALTER TABLE items ADD COLUMN quick_hash TEXT", ())
+            .await
+            .map_err(|e| format!("Failed to add quick_hash: {}", e))?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_quick_hash ON items(quick_hash)", ()).await.map_err(|e| e.to_string())?;
+    }
+
+    if !column_exists(conn, "items", "last_known_path").await {
+        conn.execute("ALTER TABLE items ADD COLUMN last_known_path TEXT", ())
+            .await
+            .map_err(|e| format!("Failed to add last_known_path: {}", e))?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_path ON items(last_known_path)", ()).await.map_err(|e| e.to_string())?;
+    }
+
+    if !column_exists(conn, "items", "is_dir").await {
+        conn.execute("ALTER TABLE items ADD COLUMN is_dir INTEGER DEFAULT 0", ())
+            .await
+            .map_err(|e| format!("Failed to add is_dir: {}", e))?;
+    }
+
     // Create index for faster parent-child queries
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)",
@@ -376,6 +404,27 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?;
 
+    // Level 7: Workspace Directories table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS workspace_dirs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER NOT NULL,
+            path TEXT NOT NULL,
+            collapsed INTEGER DEFAULT 1,
+            FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        )",
+        (),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Add collapsed column if missing
+    if !column_exists(conn, "workspace_dirs", "collapsed").await {
+        conn.execute("ALTER TABLE workspace_dirs ADD COLUMN collapsed INTEGER DEFAULT 1", ())
+            .await
+            .map_err(|e| format!("Failed to add collapsed to workspace_dirs: {}", e))?;
+    }
+
     // Add workspace_id column to items if missing
     if !column_exists(conn, "items", "workspace_id").await {
         conn.execute("ALTER TABLE items ADD COLUMN workspace_id INTEGER DEFAULT 1", ())
@@ -432,7 +481,7 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
 pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> {
     // Backup items
     // Explicitly select columns to ensure order and completeness
-    let mut items_stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at FROM items").await.map_err(|e| e.to_string())?;
+    let mut items_stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items").await.map_err(|e| e.to_string())?;
     let mut items_rows = items_stmt.query(()).await.map_err(|e| e.to_string())?;
     let mut items = Vec::new();
     while let Ok(Some(row)) = items_rows.next().await {
@@ -451,6 +500,10 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
         let summary: Option<String> = row.get(12).ok();
         let created_at: Option<i64> = row.get(13).ok();
         let updated_at: Option<i64> = row.get(14).ok();
+        let content_hash: Option<String> = row.get(15).ok();
+        let quick_hash: Option<String> = row.get(16).ok();
+        let last_known_path: Option<String> = row.get(17).ok();
+        let is_dir: i64 = row.get(18).unwrap_or(0);
         
         items.push(serde_json::json!({
             "id": id,
@@ -467,7 +520,11 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
             "url": url,
             "summary": summary,
             "created_at": created_at,
-            "updated_at": updated_at
+            "updated_at": updated_at,
+            "content_hash": content_hash,
+            "quick_hash": quick_hash,
+            "last_known_path": last_known_path,
+            "is_dir": is_dir
         }));
     }
     
@@ -586,11 +643,15 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
         let summary = item["summary"].as_str();
         let created_at = item["created_at"].as_i64();
         let updated_at = item["updated_at"].as_i64();
+        let content_hash = item["content_hash"].as_str();
+        let quick_hash = item["quick_hash"].as_str();
+        let last_known_path = item["last_known_path"].as_str();
+        let is_dir = item["is_dir"].as_i64().unwrap_or(0);
         
         conn.execute(
-            "INSERT OR REPLACE INTO items (id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            libsql::params![id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at]
+            "INSERT OR REPLACE INTO items (id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            libsql::params![id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir]
         ).await.map_err(|e| e.to_string())?;
     }
 

@@ -50,6 +50,9 @@ pub fn ItemTreeView(
                 DropTarget::Zone(parent_id, position) => {
                     let _ = commands::move_item(dragged_id, parent_id, position).await;
                 }
+                DropTarget::File(_) => {
+                    // Items cannot be dropped on files currently
+                }
             }
             // Refetch items and update store
             if let Ok(loaded) = commands::list_items_by_workspace(ws_id.get_untracked()).await {

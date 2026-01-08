@@ -7,6 +7,8 @@ mod tag;
 mod workspace;
 mod window;
 mod sync;
+mod files;
+mod dialog;
 
 use wasm_bindgen::prelude::*;
 
@@ -22,3 +24,5 @@ pub use tag::*;
 pub use workspace::*;
 pub use window::*;
 pub use sync::*;
+pub use files::*;
+pub use dialog::*;

@@ -328,15 +328,19 @@ pub fn TagColumn(
     let ctx = use_context::<AppContext>().expect("AppContext should be provided");
     let store = use_app_store();
     
-    // Create DnD context
-    let tag_dnd = TagDndContext::new();
-    provide_context(tag_dnd);
-    
+    // Expect DnD context to be provided by parent (App)
+    let tag_dnd = use_context::<TagDndContext>().expect("TagDndContext should be provided");
     let dnd = tag_dnd.dnd;
     
     // Bind global mouseup handler for dropping
-    let ctx_for_drop = ctx;
+    let ctx_for_drop = ctx; // used in closure if needed
     let dragging_parent = tag_dnd.dragging_parent_id;
+    
+    // We bind global mouseup here. Note: If App provides context, App could bind it,
+    // but TagColumn is the main consumer/manager of Tag DnD logic.
+    // However, since we now support dropping on Files (which are outside TagColumn),
+    // having the logic here is still fine as long as we handle it.
+    
     bind_global_mouseup(dnd.clone(), move |dragged_id, target| {
         let parent_id_when_dragged = dragging_parent.get_untracked();
         
@@ -351,6 +355,11 @@ pub fn TagColumn(
                     if dragged_id != target_tag_id {
                         let _ = commands::add_tag_parent(dragged_id, target_tag_id).await;
                     }
+                    // Refetch root_tags and update store
+                    if let Ok(loaded) = commands::get_root_tags().await {
+                        *store.root_tags().write() = loaded;
+                    }
+                    *store.tags_relation_version().write() += 1;
                 }
                 DropTarget::Zone(target_parent_id, position) => {
                     web_sys::console::log_1(&format!("[DnD] Zone drop: dragged={}, target_parent={:?}, position={}", 
@@ -358,23 +367,35 @@ pub fn TagColumn(
                     // Determine if this is root tag or child tag
                     if target_parent_id.is_none() && parent_id_when_dragged.is_none() {
                         // Root tag moving within root
-                        web_sys::console::log_1(&format!("[DnD] Calling move_tag({}, {})", dragged_id, position).into());
-                        let result = commands::move_tag(dragged_id, position).await;
-                        web_sys::console::log_1(&format!("[DnD] move_tag result: {:?}", result.is_ok()).into());
+                        let _ = commands::move_tag(dragged_id, position).await;
                     } else if let Some(parent_id) = target_parent_id {
                         // Child tag moving within parent
-                        web_sys::console::log_1(&format!("[DnD] Calling move_child_tag({}, {}, {})", dragged_id, parent_id, position).into());
                         let _ = commands::move_child_tag(dragged_id, parent_id, position).await;
+                    }
+                    // Refetch root_tags and update store
+                    if let Ok(loaded) = commands::get_root_tags().await {
+                        *store.root_tags().write() = loaded;
+                    }
+                    *store.tags_relation_version().write() += 1;
+                }
+                DropTarget::File(path) => {
+                    web_sys::console::log_1(&format!("[DnD] Tag->File: {} dropped on {}", dragged_id, path).into());
+                    // 1. Ensure file item exists
+                    match commands::ensure_file_item(&path).await {
+                        Ok(item) => {
+                            // 2. Add tag to item
+                            if let Ok(_) = commands::add_item_tag(item.id, dragged_id).await {
+                                // 3. Trigger reload of Item List (if open)
+                                // We can use the reload_trigger from AppContext
+                                ctx_for_drop.reload();
+                            }
+                        }
+                        Err(e) => {
+                            web_sys::console::error_1(&format!("Failed to ensure file item: {}", e).into());
+                        }
                     }
                 }
             }
-            // Refetch root_tags and update store
-            if let Ok(loaded) = commands::get_root_tags().await {
-                web_sys::console::log_1(&format!("[DnD] Refreshed root_tags: {} items", loaded.len()).into());
-                *store.root_tags().write() = loaded;
-            }
-            // Trigger children reload
-            *store.tags_relation_version().write() += 1;
         });
     });
 
