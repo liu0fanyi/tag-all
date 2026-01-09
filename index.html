@@ -39,7 +39,10 @@
       function updateBlockCursor(textarea) {
         if (state.mode === 'normal' && document.activeElement === textarea) {
           createCursor();
-          const pos = textarea.selectionStart;
+          // Use selection end/start based on direction to track the "active" cursor end
+          const pos = (textarea.selectionDirection === 'backward')
+            ? textarea.selectionStart
+            : textarea.selectionEnd;
           const coords = getCursorXY(textarea, pos);
           const rect = textarea.getBoundingClientRect();
           const scrollTop = textarea.scrollTop;
@@ -177,18 +180,10 @@
         return coordinates;
       }
 
-      function moveCursor(textarea, newPos) {
-        const pos = Math.max(0, Math.min(newPos, textarea.value.length));
-        textarea.setSelectionRange(pos, pos);
-
+      function scrollToCursor(textarea, pos) {
         // coords relative to padding-box origin
         const coords = getCursorXY(textarea, pos);
         const { scrollTop, clientHeight } = textarea;
-
-        // Adjust logic for scrolling using coords
-        // coords.top is the pixel distance from the top of the PADDING box to the cursor
-        // If content is scrolled, the visible top of padding box is at scrollTop?
-        // No, scrollTop is how much the content is shifted up
 
         // Visible cursor Y = coords.top - scrollTop
         if (coords.top < scrollTop) {
@@ -196,7 +191,12 @@
         } else if (coords.top + coords.height > scrollTop + clientHeight) {
           textarea.scrollTop = coords.top + coords.height - clientHeight + coords.height;
         }
+      }
 
+      function moveCursor(textarea, newPos) {
+        const pos = Math.max(0, Math.min(newPos, textarea.value.length));
+        textarea.setSelectionRange(pos, pos);
+        scrollToCursor(textarea, pos);
         updateBlockCursor(textarea);
       }
 
@@ -277,37 +277,57 @@
       function handleNormalMode(e, textarea) {
         const key = e.key;
         const text = textarea.value;
-        const pos = textarea.selectionStart;
-        const { lineStart, lineEnd, lineText } = getLineInfo(textarea);
+        // Logic to determine the "active" cursor position (Head)
+        // If we have a selection, we want to move from the active end
+        const pos = (textarea.selectionDirection === 'backward')
+          ? textarea.selectionStart
+          : textarea.selectionEnd;
 
-        // Handle pending commands
-        if (state.pending === 'd') {
-          if (key === 'd') {
-            // dd - delete line
-            const newText = text.substring(0, lineStart) +
-              (lineEnd < text.length ? text.substring(lineEnd + 1) : '');
-            state.register = lineText + '\n';
-            textarea.value = newText;
-            moveCursor(textarea, lineStart);
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const { lineStart, lineEnd, lineText } = (function () {
+          const start = text.lastIndexOf('\n', pos - 1) + 1;
+          const end = text.indexOf('\n', pos);
+          const validEnd = end === -1 ? text.length : end;
+          return {
+            lineStart: start,
+            lineEnd: validEnd,
+            lineText: text.substring(start, validEnd)
+          };
+        })();
+
+        // Check for pending command sequences
+        if (state.pending) {
+          if (state.pending === 'g' && key === 'g') {
+            // gg - go to start
+            moveCursor(textarea, 0);
           }
+
           state.pending = '';
           e.preventDefault();
           return;
         }
 
-        if (state.pending === 'y') {
-          if (key === 'y') {
-            // yy - yank line
-            state.register = lineText + '\n';
-          }
-          state.pending = '';
-          e.preventDefault();
-          return;
-        }
+
 
         switch (key) {
           // Mode switch
+
+          // Helix-style Line Selection
+          case 'x':
+            // Select current line
+            {
+              const pos = (textarea.selectionDirection === 'backward') ? textarea.selectionStart : textarea.selectionEnd;
+              const startI = text.lastIndexOf('\n', pos - 1) + 1;
+              const endI = text.indexOf('\n', pos);
+              const validEnd = endI === -1 ? text.length : endI + 1; // +1 to include \n
+
+              // If we are already selecting this line, maybe extend? 
+              // But for now just select current line.
+              textarea.setSelectionRange(startI, validEnd);
+              updateBlockCursor(textarea);
+            }
+            e.preventDefault();
+            break;
+
           case 'i':
             state.mode = 'insert';
             updateModeIndicator(textarea);
@@ -369,13 +389,24 @@
             e.preventDefault();
             break;
 
-          // Word motion
+          // Word motion (Helix style: select to next word)
           case 'w':
-            moveCursor(textarea, findNextWord(text, pos));
+            const nextPos = findNextWord(text, pos);
+            // Select from current pos to nextPos
+            // Using setSelectionRange(start, end, direction)
+            textarea.setSelectionRange(pos, nextPos, 'forward');
+            // Scroll to end of selection
+            scrollToCursor(textarea, nextPos);
+            updateBlockCursor(textarea);
             e.preventDefault();
             break;
+
           case 'b':
-            moveCursor(textarea, findPrevWord(text, pos));
+            const prevPos = findPrevWord(text, pos);
+            // Helix style: select backwards from current pos to prevPos
+            textarea.setSelectionRange(prevPos, pos, 'backward');
+            scrollToCursor(textarea, prevPos);
+            updateBlockCursor(textarea);
             e.preventDefault();
             break;
           case 'e':
@@ -383,7 +414,7 @@
             e.preventDefault();
             break;
 
-          // Line start/end
+          // Line start/end/doc
           case '0':
             moveCursor(textarea, lineStart);
             e.preventDefault();
@@ -392,35 +423,83 @@
             moveCursor(textarea, lineEnd);
             e.preventDefault();
             break;
+          case 'g':
+            state.pending = 'g';
+            e.preventDefault();
+            break;
+          case 'G':
+            moveCursor(textarea, text.length);
+            e.preventDefault();
+            break;
 
           // Operators
           case 'd':
-            // Single d - delete character at cursor
-            if (pos < text.length) {
-              state.register = text[pos];
-              textarea.value = text.substring(0, pos) + text.substring(pos + 1);
-              moveCursor(textarea, pos);
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            // d - delete selection (or single char if collapsed)
+            {
+              const start = textarea.selectionStart;
+              const end = textarea.selectionEnd;
+              if (start === end && pos < text.length) {
+                // Collapsed: select current char
+                textarea.setSelectionRange(pos, pos + 1);
+              }
+              // read selection
+              state.register = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+              document.execCommand('delete');
+
+              // If we were collapsed, we are now collapsed at pos.
+              // If we were a range, we are now collapsed at start of range.
+              updateBlockCursor(textarea);
             }
             e.preventDefault();
             break;
+
+          case 'y':
+            // y - yank selection (or single char if collapsed)
+            {
+              let start = textarea.selectionStart;
+              let end = textarea.selectionEnd;
+              let wasCollapsed = (start === end);
+
+              if (wasCollapsed && pos < text.length) {
+                // Select char temporarily for yanking
+                textarea.setSelectionRange(pos, pos + 1);
+                start = pos;
+                end = pos + 1;
+              }
+
+              state.register = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+
+              // If it was collapsed, restore cursor to collapsed
+              if (wasCollapsed) {
+                textarea.setSelectionRange(pos, pos);
+              }
+              // If it was a range, some editors keep selection (Helix), some collapse (Vim).
+              // Helix usually keeps selection. Let's keep it.
+            }
+            e.preventDefault();
+            break;
+
           case 'D':
             // D - delete to end of line  
-            state.pending = 'D';
+            textarea.setSelectionRange(pos, lineEnd);
+            state.register = textarea.value.substring(pos, lineEnd);
+            document.execCommand('delete');
             e.preventDefault();
             break;
-          case 'y':
-            state.pending = 'y';
-            e.preventDefault();
-            break;
+
           case 'p':
             // Paste after cursor
             if (state.register) {
               const pastePos = state.register.endsWith('\n') ? lineEnd + 1 : pos + 1;
-              const insertPos = Math.min(pastePos, text.length);
-              textarea.value = text.substring(0, insertPos) + state.register + text.substring(insertPos);
-              moveCursor(textarea, insertPos + state.register.length);
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              // Ensure we don't paste beyond length (though execCommand handles valid ranges)
+              moveCursor(textarea, pastePos);
+              document.execCommand('insertText', false, state.register);
+              // execCommand leaves cursor AFTER text. 
+              // Vim 'p' leaves cursor at end of pasted text? Or start? 
+              // Typically: `p` puts text after cursor, and leaves cursor at END of pasted text in Vim? 
+              // Actually Vim leaves cursor at start of pasted text usually (for `P`) or end? 
+              // Let's stick to standard input behavior which is end.
+              moveCursor(textarea, textarea.selectionEnd);
             }
             e.preventDefault();
             break;
@@ -428,9 +507,9 @@
             // Paste before cursor
             if (state.register) {
               const insertPos = state.register.endsWith('\n') ? lineStart : pos;
-              textarea.value = text.substring(0, insertPos) + state.register + text.substring(insertPos);
               moveCursor(textarea, insertPos);
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+              document.execCommand('insertText', false, state.register);
+              moveCursor(textarea, textarea.selectionEnd);
             }
             e.preventDefault();
             break;
@@ -445,6 +524,13 @@
             document.execCommand('redo');
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
             e.preventDefault();
+            break;
+
+          default:
+            // Block any other single char input in normal mode (unless Ctrl/Alt/Meta is pressed)
+            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+              e.preventDefault();
+            }
             break;
         }
       }
@@ -478,6 +564,16 @@
         textarea.addEventListener('keydown', function (e) {
           // Escape always returns to normal mode
           if (e.key === 'Escape') {
+            // If already in normal mode and has selection, collapse it (Helix style)
+            if (state.mode === 'normal') {
+              const pos = (textarea.selectionDirection === 'backward') ? textarea.selectionStart : textarea.selectionEnd;
+              // Only collapse if there is actually a range
+              if (textarea.selectionStart !== textarea.selectionEnd) {
+                textarea.setSelectionRange(pos, pos);
+                updateBlockCursor(textarea);
+              }
+            }
+
             state.mode = 'normal';
             state.pending = '';
             updateModeIndicator(textarea);
