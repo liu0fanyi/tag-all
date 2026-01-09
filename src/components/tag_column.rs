@@ -62,6 +62,8 @@ fn TagAddInput() -> impl IntoView {
                 set_new_tag_name.set(String::new());
                 // Fine-grained update: push new tag to store.root_tags
                 store.root_tags().write().push(new_tag);
+                // Trigger reload to refresh autocomplete in TagEditor
+                ctx.reload();
             }
         });
     };

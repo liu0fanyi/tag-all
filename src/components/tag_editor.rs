@@ -209,6 +209,8 @@ pub fn TagEditor(
                     Ok(new_tag) => {
                         // Also add to store.root_tags for TagColumn
                         store.root_tags().write().push(new_tag.clone());
+                        // Also add to all_tags for autocomplete
+                        set_all_tags.update(|tags| tags.push(new_tag.clone()));
                         new_tag
                     }
                     Err(_) => return,
