@@ -42,7 +42,6 @@
         font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
         font-size: 14px;
         line-height: 1.5;
-        letter-spacing: normal !important;
         font-variant-ligatures: none !important;
         font-weight: normal !important;
         font-style: normal !important;
@@ -227,76 +226,91 @@
       }
 
       // Helper to calculate cursor coordinates
+      // Helper to find text node and offset for a given index in a root element
+      function getTextNodeAt(root, targetIndex) {
+        let currentIndex = 0;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while (node = walker.nextNode()) {
+          const len = node.textContent.length;
+          if (currentIndex + len >= targetIndex) {
+            return { node, offset: targetIndex - currentIndex };
+          }
+          currentIndex += len;
+        }
+        return null;
+      }
+
+      // Helper to calculate cursor coordinates
+      // Now attempts to use Highlight Layer Range first for perfect alignment
       function getCursorXY(textarea, selectionPoint) {
-        const {
-          scrollTop,
-          scrollLeft,
-          clientWidth,
-          clientHeight
-        } = textarea;
-
-        // Create a dummy div to mirror the textarea
-        const div = document.createElement('div');
-
-        // Copy styles - copy EVERY relevant font/text property
-        const copyStyle = getComputedStyle(textarea);
-        for (const prop of [
-          'font-family', 'font-size', 'font-weight', 'font-style', 'letter-spacing',
-          'line-height', 'text-transform', 'word-spacing', 'text-indent',
-          'white-space', 'word-wrap', 'word-break', 'overflow-wrap', 'tab-size',
-          'padding-left', 'padding-right', 'padding-top', 'padding-bottom',
-          'direction', 'text-align'
-        ]) {
-          div.style[prop] = copyStyle[prop].toString(); // Ensure string copy
+        // 1. Try Highlight Layer measurement (if available)
+        const container = textarea.closest('.editor-container');
+        if (container) {
+          const highlightLayer = container.querySelector('.highlight-layer code');
+          if (highlightLayer) {
+            const hit = getTextNodeAt(highlightLayer, selectionPoint);
+            if (hit) {
+              try {
+                const range = document.createRange();
+                range.setStart(hit.node, hit.offset);
+                range.collapse(true);
+                const rects = range.getClientRects();
+                if (rects.length > 0) {
+                  const rect = rects[0];
+                  const containerRect = highlightLayer.parentElement.getBoundingClientRect();
+                  // Calculate relative coordinates
+                  return {
+                    top: rect.top - containerRect.top + highlightLayer.parentElement.scrollTop,
+                    left: rect.left - containerRect.left + highlightLayer.parentElement.scrollLeft,
+                    height: rect.height || 20
+                  };
+                }
+              } catch (e) { /* Ignore range errors */ }
+            }
+          }
         }
 
-        // Also handling 'zoom' if it exists (non-standard but common source of mismatch)
-        if (copyStyle['zoom']) div.style['zoom'] = copyStyle['zoom'];
+        // 2. Fallback: Mirror Div (cleaned up)
+        const div = document.createElement('div');
+        div.className = textarea.className;
 
-        // Explicitly force line-height to be a pixel value if possible
-        // But getComputedStyle usually returns px for line-height unless it's 'normal'
-        // If 'normal', we might have issues. 
-
-        // Specific styles for the mirror div
+        // Reset absolute positioning & visibility
         div.style.position = 'absolute';
         div.style.top = '0px';
         div.style.left = '0px';
         div.style.visibility = 'hidden';
+        div.style.height = 'auto';
         div.style.overflow = 'hidden';
 
-        // Use standard pre-wrap to match textarea default behavior
-        div.style.whiteSpace = 'pre-wrap';
-
-        // Match content box width (excluding scrollbar and borders)
-        // clientWidth is padding-box width (content + padding)
-        // We set div to copy padding, so we want div's *padding-box* width to match
+        // Match sizing
         div.style.boxSizing = 'border-box';
-        div.style.width = clientWidth + 'px';
+        div.style.width = textarea.clientWidth + 'px';
+        div.style.padding = window.getComputedStyle(textarea).padding;
         div.style.border = 'none';
         div.style.margin = '0';
 
-        // Set text
-        div.textContent = textarea.value.substring(0, selectionPoint);
+        // Zoom handling
+        const style = window.getComputedStyle(textarea);
+        if (style.zoom && style.zoom !== '1') div.style.zoom = style.zoom;
 
-        // Add a span to mark the cursor position
+        div.textContent = textarea.value.substring(0, selectionPoint);
         const span = document.createElement('span');
         span.textContent = '|';
         div.appendChild(span);
 
-        document.body.appendChild(div);
+        textarea.parentElement.appendChild(div);
 
         const spanRect = span.getBoundingClientRect();
         const divRect = div.getBoundingClientRect();
 
         const coordinates = {
-          // Relative to the content/padding-box origin (0,0) of the div
-          // This includes padding offset + text flow position
           top: spanRect.top - divRect.top,
           left: spanRect.left - divRect.left,
-          height: parseInt(copyStyle['line-height']) || 20
+          height: parseInt(style['line-height']) || 20
         };
 
-        document.body.removeChild(div);
+        textarea.parentElement.removeChild(div);
         return coordinates;
       }
 
@@ -766,6 +780,12 @@
         let lastValue = null;
         const syncHighlight = () => {
           if (highlightLayer) {
+            // FORCE width sync to account for scrollbar differences
+            // textarea.clientWidth excludes scrollbar, so we match that for the overlay
+            if (highlightLayer.parentElement.style.width !== textarea.clientWidth + 'px') {
+              highlightLayer.parentElement.style.width = textarea.clientWidth + 'px';
+            }
+
             // Check if value actually changed to avoid expensive DOM updates
             const currentVal = textarea.value;
             if (currentVal !== lastValue) {
@@ -780,6 +800,11 @@
             const parent = highlightLayer.parentElement;
             if (parent.scrollTop !== textarea.scrollTop) parent.scrollTop = textarea.scrollTop;
             if (parent.scrollLeft !== textarea.scrollLeft) parent.scrollLeft = textarea.scrollLeft;
+
+            // Keep width synced during resize/scroll interactions
+            if (parent.style.width !== textarea.clientWidth + 'px') {
+              parent.style.width = textarea.clientWidth + 'px';
+            }
           }
         };
 
