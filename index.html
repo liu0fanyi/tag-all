@@ -14,6 +14,92 @@
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 
   <script>
+    // Add styles for editor overlay and highlighting
+    const style = document.createElement('style');
+    style.textContent = `
+      .editor-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        min-height: 200px;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      
+      .editor-container {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        min-height: 200px;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      
+      .memo-textarea, .highlight-layer, .highlight-layer code {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 10px;
+        border: none;
+        box-sizing: border-box;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        background: transparent;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        letter-spacing: normal !important;
+        font-variant-ligatures: none !important;
+        font-weight: normal !important;
+        font-style: normal !important;
+      }
+      
+      .memo-textarea {
+        z-index: 2;
+        color: transparent;
+        caret-color: #d4d4d4; /* Default caret color */
+        resize: none;
+        outline: none;
+      }
+      
+      /* Make selection visible on transparent text */
+      .memo-textarea::selection {
+        background: rgba(38, 79, 120, 0.5); /* VSCode selection style */
+        color: transparent;
+      }
+      
+      .highlight-layer {
+        z-index: 1;
+        pointer-events: none;
+        color: #d4d4d4; /* Default text color */
+        background-color: #1e1e1e; /* VSCode background */
+      }
+      
+      /* Syntax Highlighting Colors (VSCode Dark+ inspired) */
+      /* Note: Removed font-weight: bold and font-style: italic to prevent layout shift */
+      .hl-header { color: #569cd6; } 
+      .hl-code-block { background-color: #2d2d2d; }
+      .hl-code-inline { color: #ce9178; }
+      .hl-bold { color: #dcdcaa; } /* Was bold */
+      .hl-italic { } /* Was italic, now just normal to keep alignment */
+      .hl-link { color: #9cdcfe; text-decoration: underline; }
+      .hl-image { color: #ce9178; }
+      .hl-math { color: #b5cea8; }
+      .hl-list { color: #6796e6; }
+      .hl-quote { color: #6a9955; } /* Was italic */
+      .hl-hr { color: #808080; border-bottom: 1px solid #808080; }
+      .hl-ref { color: #569cd6; } /* Reference definition */
+    `;
+    document.head.appendChild(style);
+  </script>
+
+  <script>
     /**
      * Lightweight Vim/Helix Modal Editor
      * Supports: hjkl, w/b/e, dd/yy/p, i/a/o/O, Esc
@@ -79,7 +165,8 @@
             // Get character under cursor to display in inverted color?
             // That's complex (requires overlaying text).
             // Classic web VIM usually just uses semi-transparent block.
-            cursorEl.textContent = textarea.value[pos] || ' ';
+            // cursorEl.textContent = textarea.value[pos] || ' ';
+            cursorEl.textContent = ''; // Clear text content to avoid ghosting artifacts
           } else {
             cursorEl.style.display = 'none';
           }
@@ -560,7 +647,109 @@
         }));
       }
 
+      function simpleMarkdownHighlighter(text) {
+        // Escape HTML
+        let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+        // Code blocks - handle triple backticks first
+        html = html.replace(/```[\s\S]*?```/g, match => `<span class="hl-code-block">${match}</span>`);
+
+        // Math Blocks ($$ ... $$)
+        html = html.replace(/\$\$([\s\S]*?)\$\$/g, match => `<span class="hl-math">${match}</span>`);
+
+        // Inline Math ($ ... $)
+        // Simple regex: match $...$ where ... is not nothing and doesn't contain newline
+        html = html.replace(/(\$\$[\s\S]*?\$\$)|(\$[^$\n]+?\$)/g, (match, block, inline) => {
+          if (block) return match; // Already handled
+          return `<span class="hl-math">${match}</span>`;
+        });
+
+        // Headers
+        html = html.replace(/^#{1,6}\s+.*$/gm, match => `<span class="hl-header">${match}</span>`);
+
+        // Inline code
+        html = html.replace(/`[^`\n]+`/g, match => `<span class="hl-code-inline">${match}</span>`);
+
+        // Images ![alt](url)
+        // Use stricter matching to avoid capturing newlines or extra chars
+        html = html.replace(/!\[([^\]\n]*?)\]\(([^)\n]*?)\)/g, match => `<span class="hl-image">${match}</span>`);
+
+        // Links [text](url)
+        // Ensure we don't match inside existing spans (simple check for <)
+        // We match [...] but EXCLUDE starting with ! (already handled, though image replacement makes it safe)
+        html = html.replace(/\[([^\]\n]*?)\]\(([^)\n]*?)\)/g, (match) => {
+          return `<span class="hl-link">${match}</span>`;
+        });
+
+        // Reference style links definition [id]: url
+        html = html.replace(/^\[.*?\]:\s+.*$/gm, match => `<span class="hl-ref">${match}</span>`);
+
+        // Bold/Italic
+        html = html.replace(/\*\*[^*]+\*\*/g, match => `<span class="hl-bold">${match}</span>`);
+        html = html.replace(/\*[^*]+\*/g, match => `<span class="hl-italic">${match}</span>`);
+
+        // Lists
+        html = html.replace(/^(\s*[-*+]|\d+\.)\s/gm, match => `<span class="hl-list">${match}</span>`);
+
+        // Quotes
+        html = html.replace(/^>\s.*$/gm, match => `<span class="hl-quote">${match}</span>`);
+
+        // Horizontal Rules
+        html = html.replace(/^---$/gm, match => `<span class="hl-hr">${match}</span>`);
+
+        // Handle trailing newline for pre element
+        if (text.endsWith('\n')) {
+          html += '<br>';
+        }
+
+        return html;
+      }
+
       function attach(textarea) {
+        // Force transparent background (in case of overrides)
+        textarea.style.backgroundColor = 'transparent';
+
+        // Find highlight layer
+        const container = textarea.closest('.editor-container');
+        let highlightLayer = null;
+        if (container) {
+          highlightLayer = container.querySelector('.highlight-layer code');
+        }
+
+        let lastValue = null;
+        const syncHighlight = () => {
+          if (highlightLayer) {
+            // Check if value actually changed to avoid expensive DOM updates
+            const currentVal = textarea.value;
+            if (currentVal !== lastValue) {
+              highlightLayer.innerHTML = simpleMarkdownHighlighter(currentVal);
+              lastValue = currentVal;
+            }
+          }
+        };
+
+        const syncScroll = () => {
+          if (highlightLayer && highlightLayer.parentElement) {
+            const parent = highlightLayer.parentElement;
+            if (parent.scrollTop !== textarea.scrollTop) parent.scrollTop = textarea.scrollTop;
+            if (parent.scrollLeft !== textarea.scrollLeft) parent.scrollLeft = textarea.scrollLeft;
+          }
+        };
+
+        // Initial sync
+        syncHighlight();
+
+        // Polling loop for programmatic changes
+        const poll = () => {
+          syncHighlight();
+          // Also force sync scroll (Leptos re-renders might reset scroll?)
+          // syncScroll(); 
+          if (document.body.contains(textarea)) {
+            requestAnimationFrame(poll);
+          }
+        };
+        requestAnimationFrame(poll);
+
         textarea.addEventListener('keydown', function (e) {
           // Escape always returns to normal mode
           if (e.key === 'Escape') {
@@ -584,7 +773,11 @@
           if (state.mode === 'normal') {
             handleNormalMode(e, textarea);
             // Ensure cursor updates after action
-            requestAnimationFrame(() => updateBlockCursor(textarea));
+            requestAnimationFrame(() => {
+              updateBlockCursor(textarea);
+              syncHighlight();
+              syncScroll();
+            });
           } else {
             // In insert mode, hide block cursor
             if (cursorEl) cursorEl.style.display = 'none';
@@ -595,12 +788,16 @@
         const update = () => {
           if (state.mode === 'normal') updateBlockCursor(textarea);
           else if (cursorEl) cursorEl.style.display = 'none';
+          syncScroll();
         };
 
         textarea.addEventListener('click', update);
         textarea.addEventListener('focus', update);
         textarea.addEventListener('scroll', update);
-        textarea.addEventListener('input', update);
+        textarea.addEventListener('input', () => {
+          update();
+          syncHighlight();
+        });
         // Also update on window resize/scroll in case of layout changes
         window.addEventListener('resize', update);
         window.addEventListener('scroll', update); // Capture phase if needed?

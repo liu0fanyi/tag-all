@@ -177,25 +177,33 @@ pub fn MemoEditorColumn(
                     // Left: Edit area
                     <div class="memo-edit-pane">
                         <div class="pane-header">"编辑"</div>
-                        <textarea
-                            class="memo-textarea"
-                            prop:value=move || memo_content.get()
-                            on:input=move |ev| {
-                                let target = ev.target().unwrap();
-                                let textarea = target.dyn_ref::<web_sys::HtmlTextAreaElement>().unwrap();
-                                set_memo_content.set(textarea.value());
-                            }
-                            on:vimmodechange=move |ev: web_sys::CustomEvent| {
-                                if let Some(mode) = js_sys::Reflect::get(&ev.detail(), &wasm_bindgen::JsValue::from_str("mode")).ok() {
-                                    if let Some(mode_str) = mode.as_string() {
-                                        set_vim_mode.set(mode_str);
+                        <div class="editor-container">
+                            <pre class="highlight-layer" aria-hidden="true"><code class="highlight-content"></code></pre>
+                            <textarea
+                                class="memo-textarea"
+                                prop:value=move || memo_content.get()
+                                on:input=move |ev| {
+                                    let target = ev.target().unwrap();
+                                    let textarea = target.dyn_ref::<web_sys::HtmlTextAreaElement>().unwrap();
+                                    set_memo_content.set(textarea.value());
+                                    // Trigger highlight update (will be handled by JS attached in index.html)
+                                    // But we need to make sure JS can find the highlight layer.
+                                    // The JS 'attach' function runs once.
+                                    // We can dispatch an event or just let the JS 'input' listener handle it.
+                                    // Note: prevent default input behavior? No.
+                                }
+                                on:vimmodechange=move |ev: web_sys::CustomEvent| {
+                                    if let Some(mode) = js_sys::Reflect::get(&ev.detail(), &wasm_bindgen::JsValue::from_str("mode")).ok() {
+                                        if let Some(mode_str) = mode.as_string() {
+                                            set_vim_mode.set(mode_str);
+                                        }
                                     }
                                 }
-                            }
-                            on:paste=handle_paste
-                            on:blur=move |_| save_memo()
-                            placeholder="输入 Markdown 内容... (按 Esc 进入 Normal 模式)"
-                        ></textarea>
+                                on:paste=handle_paste
+                                on:blur=move |_| save_memo()
+                                placeholder="输入 Markdown 内容... (按 Esc 进入 Normal 模式)"
+                            ></textarea>
+                        </div>
                     </div>
                     
                     // Right: Preview area
