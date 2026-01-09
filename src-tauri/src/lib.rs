@@ -176,6 +176,7 @@ pub fn run() {
             commands::open_file,
             // Clipboard
             commands::save_clipboard_image,
+            commands::clean_unused_assets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

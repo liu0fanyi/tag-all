@@ -164,11 +164,51 @@ pub fn MemoEditorColumn(
     // Vim mode indicator
     let (vim_mode, set_vim_mode) = signal(String::from("insert"));
     
+    // Asset Cleanup Logic
+    let (is_cleaning, set_is_cleaning) = signal(false);
+    
+    let cleanup_assets = move |_| {
+        set_is_cleaning.set(true);
+        spawn_local(async move {
+            match commands::clean_unused_assets().await {
+                Ok(count) => {
+                    web_sys::window().unwrap().alert_with_message(&format!("Successfully cleaned {} unused assets.", count)).unwrap();
+                }
+                Err(e) => {
+                    web_sys::window().unwrap().alert_with_message(&format!("Failed to clean assets: {}", e)).unwrap();
+                }
+            }
+            set_is_cleaning.set(false);
+        });
+    };
+
     view! {
         <Show when=move || editing_target.get().is_some()>
             <div class="memo-editor-column">
+                // Loading Overlay
+                <Show when=move || is_cleaning.get()>
+                    <div 
+                        class="loading-overlay"
+                        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: center; align-items: center; pointer-events: all; color: white;"
+                    >
+                        <div class="spinner" style="border: 4px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 4px solid white; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
+                        <div style="margin-top: 10px; font-weight: bold;">"Cleaning unused assets..."</div>
+                        <style>
+                            "@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }"
+                        </style>
+                    </div>
+                </Show>
+
                 <div class="memo-editor-header">
                     <span class="memo-editor-title">{title}</span>
+                    <button 
+                        class="cleanup-btn" 
+                        title="Clean unused local images"
+                        style="margin-left: auto; margin-right: 10px; padding: 2px 8px; font-size: 12px; background: #d9534f; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                        on:click=cleanup_assets
+                    >
+                        "Cleanup Assets"
+                    </button>
                     <span class=move || format!("vim-mode-indicator {}", vim_mode.get())>{move || vim_mode.get()}</span>
                     <button class="close-btn" on:click=move |_| set_editing_target.set(None)>"×"</button>
                 </div>
@@ -186,11 +226,6 @@ pub fn MemoEditorColumn(
                                     let target = ev.target().unwrap();
                                     let textarea = target.dyn_ref::<web_sys::HtmlTextAreaElement>().unwrap();
                                     set_memo_content.set(textarea.value());
-                                    // Trigger highlight update (will be handled by JS attached in index.html)
-                                    // But we need to make sure JS can find the highlight layer.
-                                    // The JS 'attach' function runs once.
-                                    // We can dispatch an event or just let the JS 'input' listener handle it.
-                                    // Note: prevent default input behavior? No.
                                 }
                                 on:vimmodechange=move |ev: web_sys::CustomEvent| {
                                     if let Some(mode) = js_sys::Reflect::get(&ev.detail(), &wasm_bindgen::JsValue::from_str("mode")).ok() {

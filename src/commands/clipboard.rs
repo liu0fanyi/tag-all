@@ -30,3 +30,11 @@ pub async fn save_clipboard_image(data: &str) -> Result<String, String> {
     serde_wasm_bindgen::from_value::<String>(result)
         .map_err(|e| format!("Failed to parse result: {}", e))
 }
+
+/// Clean up unused assets
+pub async fn clean_unused_assets() -> Result<usize, String> {
+    let result = invoke("clean_unused_assets", JsValue::NULL).await;
+    
+    serde_wasm_bindgen::from_value::<usize>(result)
+        .map_err(|e| format!("Failed to parse result: {}", e))
+}

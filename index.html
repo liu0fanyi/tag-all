@@ -37,7 +37,20 @@
         line-height: 1.5;
       }
       
+      /* Shared Typography & Metrics - MUST BE IDENTICAL */
       .memo-textarea, .highlight-layer, .highlight-layer code {
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        letter-spacing: normal !important;
+        font-variant-ligatures: none !important;
+        font-weight: normal !important;
+        font-style: normal !important;
+        tab-size: 4;
+      }
+
+      /* Layout Containers */
+      .memo-textarea, .highlight-layer {
         position: absolute;
         top: 0;
         left: 0;
@@ -47,17 +60,37 @@
         padding: 10px;
         border: none;
         box-sizing: border-box;
-        overflow: auto;
         white-space: pre-wrap;
         word-wrap: break-word;
+      }
+
+      .memo-textarea {
+        z-index: 2;
+        overflow: auto; /* User scrolls this */
         background: transparent;
-        font-family: inherit;
-        font-size: inherit;
-        line-height: inherit;
-        letter-spacing: normal !important;
-        font-variant-ligatures: none !important;
-        font-weight: normal !important;
-        font-style: normal !important;
+        color: transparent;
+        caret-color: #d4d4d4;
+        resize: none;
+        outline: none;
+      }
+
+      .highlight-layer {
+        z-index: 1;
+        overflow: hidden; /* Hide scrollbars, synced via JS */
+        pointer-events: none;
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+      }
+
+      /* Inner Code Element - Must flow naturally */
+      .highlight-layer code {
+        position: static; /* Force static to allow parent to scroll */
+        display: inline; /* Or block, but inline works in pre-wrap */
+        overflow: visible;
+        background: transparent;
+        padding: 0; margin: 0;
+        border: none;
+        /* Inherit font styles from shared block */
       }
       
       .memo-textarea {
@@ -426,6 +459,20 @@
             updateModeIndicator(textarea);
             e.preventDefault();
             break;
+          case 'A':
+            // Append at end of line
+            state.mode = 'insert';
+            moveCursor(textarea, lineEnd);
+            updateModeIndicator(textarea);
+            e.preventDefault();
+            break;
+          case 'I':
+            // Insert at start of line
+            state.mode = 'insert';
+            moveCursor(textarea, lineStart);
+            updateModeIndicator(textarea);
+            e.preventDefault();
+            break;
           case 'o':
             state.mode = 'insert';
             const newLinePos = lineEnd;
@@ -736,6 +783,20 @@
           }
         };
 
+        const syncPreview = () => {
+          const preview = document.getElementById('memo-preview');
+          if (preview) {
+            // Calculate scroll percentage
+            // Prevent division by zero
+            const maxScrollTop = textarea.scrollHeight - textarea.clientHeight;
+            if (maxScrollTop > 0) {
+              const percentage = textarea.scrollTop / maxScrollTop;
+              const previewMaxScrollTop = preview.scrollHeight - preview.clientHeight;
+              preview.scrollTop = percentage * previewMaxScrollTop;
+            }
+          }
+        };
+
         // Initial sync
         syncHighlight();
 
@@ -777,6 +838,7 @@
               updateBlockCursor(textarea);
               syncHighlight();
               syncScroll();
+              syncPreview();
             });
           } else {
             // In insert mode, hide block cursor
@@ -789,6 +851,7 @@
           if (state.mode === 'normal') updateBlockCursor(textarea);
           else if (cursorEl) cursorEl.style.display = 'none';
           syncScroll();
+          syncPreview();
         };
 
         textarea.addEventListener('click', update);
