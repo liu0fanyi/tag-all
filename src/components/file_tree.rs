@@ -1,9 +1,11 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use std::collections::HashSet;
 use crate::commands;
 use crate::models::{WorkspaceDir, FileViewItem, Tag};
 use crate::components::{TagDndContext, EditTarget};
 use crate::store::AppStateStoreFields;
+use crate::app::FilterMode;
 use leptos_dragdrop::{make_on_mouseleave, make_on_file_mouseenter, DropTarget};
 
 #[component]
@@ -11,6 +13,8 @@ pub fn FileTree(
     workspace_id: u32,
     set_selected_file: WriteSignal<Option<FileViewItem>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
+    selected_tags: ReadSignal<Vec<u32>>,
+    filter_mode: ReadSignal<FilterMode>,
 ) -> impl IntoView {
     let (dirs, set_dirs) = signal(Vec::<WorkspaceDir>::new());
     
@@ -54,6 +58,8 @@ pub fn FileTree(
                                 on_change=move || load_dirs() 
                                 set_selected_file=set_selected_file
                                 set_editing_target=set_editing_target
+                                selected_tags=selected_tags
+                                filter_mode=filter_mode
                             />
                         }
                     }
@@ -70,11 +76,36 @@ fn FileTreeRow(
     on_change: Callback<()>,
     set_selected_file: WriteSignal<Option<FileViewItem>>,
     set_editing_target: WriteSignal<Option<EditTarget>>,
+    selected_tags: ReadSignal<Vec<u32>>,
+    filter_mode: ReadSignal<FilterMode>,
 ) -> impl IntoView {
     let (collapsed, set_collapsed) = signal(dir.collapsed);
     let (files, set_files) = signal(Vec::<FileViewItem>::new());
     let (loading, set_loading) = signal(false);
     let (loaded_once, set_loaded_once) = signal(false);
+    
+    // Filtered files based on selected tags
+    let filtered_files = move || {
+        let all_files = files.get();
+        let selected = selected_tags.get();
+        
+        // If no tags selected, show all files
+        if selected.is_empty() {
+            return all_files;
+        }
+        
+        let selected_set: HashSet<u32> = selected.into_iter().collect();
+        let mode = filter_mode.get();
+        
+        all_files.into_iter().filter(|file| {
+            let file_tag_ids: HashSet<u32> = file.tags.iter().map(|t| t.id).collect();
+            
+            match mode {
+                FilterMode::And => selected_set.is_subset(&file_tag_ids),
+                FilterMode::Or => !selected_set.is_disjoint(&file_tag_ids),
+            }
+        }).collect()
+    };
     
     let tag_dnd = use_context::<TagDndContext>().expect("TagDndContext should be provided");
     let dnd = tag_dnd.dnd;
@@ -221,7 +252,7 @@ fn FileTreeRow(
                 <div class="tree-children">
                      <Show when=move || !loading.get() fallback=|| view! { <div class="loading small">"Loading..."</div> }>
                         <For
-                            each=move || files.get()
+                            each=filtered_files
                             key=|f| format!("{}::{:?}", f.path, f.tags)
                             children=move |file| {
                                 let file_path = file.path.clone();

@@ -308,6 +308,8 @@ pub fn App() -> impl IntoView {
                     <FilesWorkspace 
                         set_selected_file=set_selected_file 
                         set_editing_target=set_editing_target
+                        selected_tags=selected_tags
+                        filter_mode=filter_mode
                     />
                 </Show>
             </main>
