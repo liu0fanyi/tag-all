@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
+use percent_encoding::percent_decode_str;
 
 mod domain;
 mod repository;
@@ -37,6 +38,53 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .register_asynchronous_uri_scheme_protocol("asset", |_ctx, request, responder| {
+            std::thread::spawn(move || {
+                let path = request.uri().path();
+                // Decode path (percent-decoded)
+                let path = percent_decode_str(path)
+                    .decode_utf8_lossy()
+                    .to_string();
+
+                // Handle Windows paths: /C:/Users... -> C:/Users...
+                let path = if path.starts_with('/') && path.chars().nth(2) == Some(':') {
+                    path[1..].to_string()
+                } else {
+                    path
+                };
+
+                let path = std::path::PathBuf::from(&path);
+                
+                if !path.exists() {
+                    let response = tauri::http::Response::builder()
+                        .status(404)
+                        .body(Vec::new())
+                        .expect("Failed to build 404 response");
+                    responder.respond(response);
+                    return;
+                }
+                
+                match std::fs::read(&path) {
+                    Ok(content) => {
+                        let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
+                        let response = tauri::http::Response::builder()
+                            .header("Content-Type", mime_type.as_ref())
+                            .header("Access-Control-Allow-Origin", "*")
+                            .body(content)
+                            .expect("Failed to build response");
+                        responder.respond(response);
+                    }
+                    Err(_) => {
+                        let response = tauri::http::Response::builder()
+                            .status(500)
+                            .body(Vec::new())
+                            .expect("Failed to build 500 response");
+                        responder.respond(response);
+                    }
+                }
+            });
+        })
         .setup(|app| {
             let app_handle = app.handle().clone();
             

@@ -8,7 +8,7 @@ use wasm_bindgen::JsCast;
 
 use crate::commands;
 use crate::components::EditTarget;
-use crate::markdown::parse_markdown;
+use crate::markdown::{parse_markdown, trigger_math_render};
 
 /// Memo editor column with side-by-side edit and preview
 #[component]
@@ -69,7 +69,11 @@ pub fn MemoEditorColumn(
     };
     
     // Rendered HTML for preview
-    let rendered_html = move || parse_markdown(&memo_content.get());
+    let rendered_html = move || {
+        let html = parse_markdown(&memo_content.get());
+        trigger_math_render("#memo-preview"); // Scope to this element
+        html
+    };
     
     view! {
         <Show when=move || editing_target.get().is_some()>
@@ -99,7 +103,7 @@ pub fn MemoEditorColumn(
                     // Right: Preview area
                     <div class="memo-preview-pane">
                         <div class="pane-header">"预览"</div>
-                        <div class="memo-preview-content" inner_html=rendered_html></div>
+                        <div id="memo-preview" class="memo-preview-content" inner_html=rendered_html></div>
                     </div>
                 </div>
             </div>

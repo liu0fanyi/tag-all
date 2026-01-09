@@ -12,6 +12,7 @@ use crate::tree::{flatten_tree, flatten_tree_sorted, TreeSortMode};
 use crate::commands;
 use crate::context::AppContext;
 use crate::components::{TreeItem, EditTarget};
+use crate::markdown::trigger_math_render;
 use crate::app::{FilterMode, SortMode};
 use crate::store::{use_app_store, AppStateStoreFields};
 
@@ -147,8 +148,14 @@ pub fn ItemTreeView(
         tree_items().into_iter().map(|(item, _)| item.id).collect::<Vec<u32>>()
     });
 
+    // Trigger math render when items change (for markdown in tree items)
+    Effect::new(move |_| {
+        let _ = tree_items(); 
+        trigger_math_render("#item-tree-view");
+    });
+
     view! {
-        <div class="tree-view">
+        <div id="item-tree-view" class="tree-view">
             // Initial drop zone at top (root level, position 0)
             <DropZone
                 dnd=dnd.clone()
