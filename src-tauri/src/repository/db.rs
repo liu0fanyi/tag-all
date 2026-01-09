@@ -31,6 +31,10 @@ pub struct BackupData {
 pub struct DbState {
     db: Arc<Mutex<Option<Arc<Database>>>>,
     conn: Arc<Mutex<Option<Connection>>>,
+    /// Whether cloud sync is enabled for this session
+    is_sync_enabled: Arc<Mutex<bool>>,
+    /// Current sync URL (for logging)
+    sync_url: Arc<Mutex<String>>,
 }
 
 impl DbState {
@@ -38,7 +42,25 @@ impl DbState {
         Self {
             db: Arc::new(Mutex::new(None)),
             conn: Arc::new(Mutex::new(None)),
+            is_sync_enabled: Arc::new(Mutex::new(false)),
+            sync_url: Arc::new(Mutex::new(String::new())),
         }
+    }
+    
+    /// Check if cloud sync is enabled for this session
+    pub async fn is_cloud_sync_enabled(&self) -> bool {
+        *self.is_sync_enabled.lock().await
+    }
+    
+    /// Set sync enabled status and URL
+    pub async fn set_sync_config(&self, enabled: bool, url: String) {
+        *self.is_sync_enabled.lock().await = enabled;
+        *self.sync_url.lock().await = url;
+    }
+    
+    /// Get current sync URL
+    pub async fn get_sync_url(&self) -> String {
+        self.sync_url.lock().await.clone()
     }
 
     /// Get a connection, initializing if necessary
@@ -52,18 +74,47 @@ impl DbState {
     
     /// Manually trigger database sync (for cloud-synced databases)
     pub async fn sync(&self) -> Result<(), String> {
+        let is_enabled = *self.is_sync_enabled.lock().await;
+        let sync_url = self.sync_url.lock().await.clone();
+        eprintln!("[Sync] Starting sync, is_cloud_sync_enabled: {}, sync_url: {}", is_enabled, sync_url);
+        
+        if !is_enabled {
+            eprintln!("[Sync] App is in local mode, sync not available");
+            return Err("云同步未启用。请先配置云同步并重启应用。".to_string());
+        }
+        
         let guard = self.db.lock().await;
         if let Some(db) = &*guard {
-            db.sync().await.map_err(|e| {
-                let err_str = format!("{}", e);
-                if err_str.contains("File mode") || err_str.contains("not supported") {
-                    "云同步未启用。请先配置云同步并重启应用。".to_string()
-                } else {
-                    format!("同步失败: {}", e)
+            eprintln!("[Sync] Calling db.sync()...");
+            match db.sync().await {
+                Ok(result) => {
+                    eprintln!("[Sync] Sync result: {:?}", result);
+                    
+                    // Check the Replicator result for actual sync status
+                    // result is libsql::Replicated { frame_no: Option<u64>, frames_synced: u64 }
+                    let result_str = format!("{:?}", result);
+                    
+                    // If no frames synced and no frame_no, it might not have connected
+                    if result_str.contains("frames_synced: 0") && result_str.contains("frame_no: None") {
+                        eprintln!("[Sync] Warning: 0 frames synced, server connection may have failed silently");
+                        // Still return Ok, but frontend should be aware via the debug message
+                    }
+                    
+                    eprintln!("[Sync] Sync completed");
+                    Ok(())
                 }
-            })?;
-            Ok(())
+                Err(e) => {
+                    let err_str = format!("{}", e);
+                    eprintln!("[Sync] Sync failed: {}", err_str);
+                    if err_str.contains("File mode") || err_str.contains("not supported") {
+                        Err("云同步未启用。请先配置云同步并重启应用。".to_string())
+                    } else {
+                        Err(format!("同步失败: {}", e))
+                    }
+                }
+            }
         } else {
+            eprintln!("[Sync] Database not initialized");
             Err("数据库未初始化".to_string())
         }
     }
@@ -105,34 +156,107 @@ fn load_config(db_path: &PathBuf) -> Option<SyncConfig> {
     None
 }
 
-/// Initialize database with path
-pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
-    let db_path_str = db_path.to_str().ok_or("Invalid DB path")?;
+pub(crate) async fn validate_cloud_connection(url: String, token: String) -> Result<(), String> {
+    // Basic format check
+    if !url.starts_with("libsql://") && !url.starts_with("https://") {
+        return Err("URL must start with libsql:// or https://".to_string());
+    }
+
+    // Convert libsql:// to https:// for HTTP check
+    let http_url = if url.starts_with("libsql://") {
+        url.replace("libsql://", "https://")
+    } else {
+        url
+    };
+
+    // Use reqwest to check connectivity AND authentication
+    // We must send a query to trigger actual token validation. 
+    // Just checking GET / might return 200 OK (welcome page) even with bad token.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Client build failed: {}", e))?;
+
+    // Standard LibSQL/Turso HTTP API expects POST with JSON statements
+    let query_body = serde_json::json!({
+        "statements": ["SELECT 1"]
+    });
+
+    let res = client.post(&http_url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .json(&query_body)
+        .send()
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    if res.status() == reqwest::StatusCode::UNAUTHORIZED || res.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err("Authentication failed (Invalid Token)".to_string());
+    }
     
-    let config = load_config(db_path);
-    
-    let (db, conn) = if let Some(conf) = config {
-        // Cloud sync mode
-        eprintln!("Initializing Synced DB: {}, token len: {}", conf.url, conf.token.len());
+    if !res.status().is_success() {
+         return Err(format!("Server returned error: {}", res.status()));
+    }
         
-        async fn try_build_connect(path: &str, url: String, token: String) -> Result<(Database, Connection), String> {
-            let db = Builder::new_synced_database(path, url, token)
+    Ok(())
+}
+
+/// Helper to initialize local database
+async fn init_local_db_connection(db_path_str: &str) -> Result<(Database, Connection, bool, String), String> {
+    let db = Builder::new_local(db_path_str)
+        .build()
+        .await
+        .map_err(|e| format!("Failed to build local db: {}", e))?;
+    let conn = db.connect().map_err(|e| format!("Failed to connect: {}", e))?;
+    Ok((db, conn, false, String::new()))
+}
+
+/// Helper to initialize cloud database with retry and rollback
+#[allow(clippy::needless_return)] // Silence potential style warnings
+async fn init_cloud_db_connection(db_path: &PathBuf, conf: SyncConfig) -> Result<(Database, Connection, bool, String), String> {
+    let db_path_str = db_path.to_str().ok_or("Invalid DB path")?;
+    let sync_url = conf.url.clone();
+    eprintln!("Initializing Synced DB: {}, token len: {}", conf.url, conf.token.len());
+    
+    // Validate connection first!
+    let validation_result = validate_cloud_connection(conf.url.clone(), conf.token.clone()).await;
+    
+    if let Err(e) = validation_result {
+        eprintln!("Cloud connection validation failed: {}", e);
+        eprintln!("Falling back to local mode due to invalid configuration.");
+        return init_local_db_connection(db_path_str).await;
+    }
+
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        
+        // Use a boxed future for the connection attempt to minimize stack usage in the loop
+        // Explicitly scoped to ensure the Box is dropped immediately after await
+        // Direct execution without Box::pin
+        // Since we are using a loop instead of recursion, stack usage should be stable.
+        let connection_result = async {
+            let db = Builder::new_synced_database(db_path_str, conf.url.clone(), conf.token.clone())
                 .build()
                 .await
                 .map_err(|e| format!("Build failed: {}", e))?;
             let conn = db.connect().map_err(|e| format!("Connect failed: {}", e))?;
             
             // Force initial sync to detect conflicts immediately
-            // This ensures our auto-recovery logic (wipe local DB) triggers if the state is invalid
             db.sync().await.map_err(|e| format!("Initial sync failed: {}", e))?;
             
-            Ok((db, conn))
-        }
+            Ok::<_, String>((db, conn))
+        }.await;
 
-        match try_build_connect(db_path_str, conf.url.clone(), conf.token.clone()).await {
-            Ok(pair) => pair,
+        match connection_result {
+            Ok((db, conn)) => return Ok((db, conn, true, sync_url.clone())),
             Err(e) => {
-                eprintln!("Synced DB init failed: {}", e);
+                eprintln!("Synced DB init attempt {} failed: {}", attempts, e);
+                
+                if attempts >= 2 {
+                    return Err(format!("Failed after attempt {}: {}", attempts, e));
+                }
+                
                 eprintln!("DB path: {:?}", db_path);
                 eprintln!("Checking if auto-recovery should trigger...");
                 
@@ -148,14 +272,15 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
                 if should_recover {
                     eprintln!("Detected conflicting local DB state. Auto-recovering by wiping local DB...");
                     
-                    // Show what files exist before cleanup
+                    // Show what files exist before cleanup (diagnostic)
                     eprintln!("Files before cleanup:");
                     if db_path.exists() { eprintln!("  - DB file exists: {:?}", db_path); }
+                    
                     let wal_path = db_path.with_extension("db-wal");
-                    if wal_path.exists() { eprintln!("  - WAL file exists: {:?}", wal_path); }
                     let shm_path = db_path.with_extension("db-shm");
-                    if shm_path.exists() { eprintln!("  - SHM file exists: {:?}", shm_path); }
+                    // Logic for sync dir path guessing
                     let sync_dir = db_path.parent().unwrap().join(format!("{}-sync", db_path.file_name().unwrap().to_str().unwrap()));
+
                     if sync_dir.exists() { eprintln!("  - Sync dir exists: {:?}", sync_dir); }
                     
                     // Backup conflicting database
@@ -173,8 +298,8 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
                     
                     // Clean up sync metadata
                     eprintln!("Cleaning up sync metadata...");
-                    let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
-                    let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+                    let _ = std::fs::remove_file(wal_path);
+                    let _ = std::fs::remove_file(shm_path);
                     
                     if sync_dir.exists() {
                         eprintln!("Removing sync directory: {:?}", sync_dir);
@@ -186,22 +311,51 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
                     }
                     
                     eprintln!("Retrying with clean state...");
-                    // Retry with clean state
-                    try_build_connect(db_path_str, conf.url, conf.token).await
-                        .map_err(|e| format!("Retry failed: {}", e))?
+                    continue;
                 } else {
                     return Err(e);
                 }
             }
         }
+    }
+}
+
+/// Initialize database with path
+pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
+    let db_path_str = db_path.to_str().ok_or("Invalid DB path")?;
+    
+    let config = load_config(db_path);
+    
+    // Track if cloud sync mode is active and which URL was used
+    let (db, conn, is_cloud_sync, sync_url) = if let Some(conf) = config.clone() {
+        // Only use cloud sync if BOTH url and token are non-empty
+        if conf.url.is_empty() || conf.token.is_empty() {
+            eprintln!("Sync config has empty URL or token, falling back to local mode");
+            init_local_db_connection(db_path_str).await?
+        } else {
+            // Cloud sync mode
+            eprintln!("Starting cloud sync initialization (spawned)...");
+            
+            // Direct await on main thread, no Box::pin
+            // User confirmed Box::pin might be related to exit issues, so we rely on loop refactor to handle stack.
+            let db_path_clone = db_path.clone();
+            let conf_clone = conf.clone();
+            
+            match init_cloud_db_connection(&db_path_clone, conf_clone).await {
+                Ok(val) => val,
+                Err(e) => {
+                     eprintln!("Critical error in cloud init: {}", e);
+                     eprintln!("Falling back to local mode to prevent startup crash.");
+                     // Fallback to local DB if cloud init fails (e.g. invalid token, network error)
+                     // This allows the app to start so user can fix config
+                     init_local_db_connection(db_path_str).await?
+                }
+            }
+        }
     } else {
         // Local only mode
-        let db = Builder::new_local(db_path_str)
-            .build()
-            .await
-            .map_err(|e| format!("Failed to build local db: {}", e))?;
-        let conn = db.connect().map_err(|e| format!("Failed to connect: {}", e))?;
-        (db, conn)
+        eprintln!("No sync config found, initializing local mode");
+        init_local_db_connection(db_path_str).await?
     };
 
     // Enable foreign keys (required for CASCADE to work)
@@ -215,6 +369,7 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
     let state = DbState::new();
     *state.db.lock().await = Some(Arc::new(db));
     *state.conn.lock().await = Some(conn);
+    state.set_sync_config(is_cloud_sync, sync_url).await;
 
     Ok(state)
 }

@@ -23,8 +23,8 @@ pub fn SyncModal(
     sync_status: Signal<String>,
     /// Sync message
     sync_msg: Signal<String>,
-    /// Test connection callback
-    on_test_connection: Callback<()>,
+    /// Save config callback (only saves, no sync)
+    on_save_config: Callback<()>,
     /// Manual sync callback
     on_manual_sync: Callback<()>,
 ) -> impl IntoView {
@@ -82,7 +82,7 @@ pub fn SyncModal(
                             let (bg_color, text_color) = match status.as_str() {
                                 "error" => ("#fee", "#c00"),
                                 "success" => ("#efe", "#0a0"),
-                                "testing" | "syncing" => ("#eef", "#06c"),
+                                "testing" | "syncing" | "saving" => ("#eef", "#06c"),
                                 _ => ("#f5f5f5", "#666")
                             };
                             view! {
@@ -95,10 +95,16 @@ pub fn SyncModal(
                         }}
                     </div>
                     
-                    // Footer
+                    // Footer with separate Save and Sync buttons
                     <div style="padding: 8px 12px; border-top: 1px solid #e5e5e5; background: #f9f9f9; display: flex; gap: 8px; justify-content: flex-end;">
                         <button
-                            on:click=move |_| on_test_connection.run(())
+                            on:click=move |_| on_save_config.run(())
+                            style="padding: 6px 12px; font-size: 13px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer;"
+                        >
+                            "💾 保存"
+                        </button>
+                        <button
+                            on:click=move |_| on_manual_sync.run(())
                             style="padding: 6px 12px; font-size: 13px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;"
                         >
                             "🔄 同步"
@@ -111,3 +117,4 @@ pub fn SyncModal(
         }}
     }
 }
+

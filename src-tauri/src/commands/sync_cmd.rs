@@ -29,6 +29,12 @@ pub async fn configure_cloud_sync(
     eprintln!("=== Cloud Sync Configuration Start ===");
     eprintln!("URL: {}, Token len: {}", url, token.len());
     
+    // Validate connection first
+    if !url.is_empty() && !token.is_empty() {
+        crate::repository::db::validate_cloud_connection(url.clone(), token.clone()).await
+            .map_err(|e| format!("验证连接失败: {}", e))?;
+    }
+    
     let db_path = get_db_path(&app_handle);
     let backup_json_path = db_path.with_extension("db.backup.json");
     let safety_backup_path = db_path.with_extension("db.safety_backup");
@@ -204,10 +210,35 @@ pub fn get_cloud_sync_config(
     Ok(get_sync_config(&db_path))
 }
 
+/// Save cloud sync configuration without triggering sync
+#[tauri::command]
+pub async fn save_cloud_sync_config(
+    app_handle: tauri::AppHandle,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    // Validate connection before saving
+    if !url.is_empty() && !token.is_empty() {
+        crate::repository::db::validate_cloud_connection(url.clone(), token.clone()).await
+            .map_err(|e| format!("验证连接失败: {}", e))?;
+    }
+
+    let db_path = get_db_path(&app_handle);
+    configure_sync(&db_path, url, token).await
+}
+
 /// Manually trigger cloud database sync
 #[tauri::command]
 pub async fn sync_cloud_db(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
     state.db_state.sync().await
+}
+
+/// Check if cloud sync is currently enabled for this session
+#[tauri::command]
+pub async fn is_cloud_sync_enabled(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<bool, String> {
+    Ok(state.db_state.is_cloud_sync_enabled().await)
 }
