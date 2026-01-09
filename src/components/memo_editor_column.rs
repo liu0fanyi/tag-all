@@ -4,7 +4,9 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::{ClipboardEvent, DataTransferItem, DataTransferItemList, File, FileReader};
 
 use crate::commands;
 use crate::components::EditTarget;
@@ -58,6 +60,90 @@ pub fn MemoEditorColumn(
         }
     };
     
+    // Handle paste event for images
+    let handle_paste = move |ev: ClipboardEvent| {
+        if let Some(data_transfer) = ev.clipboard_data() {
+            let items = data_transfer.items();
+            
+            for i in 0..items.length() {
+                if let Some(item) = items.get(i) {
+                    let item_type = item.type_();
+                    
+                    // Check if it's an image
+                    if item_type.starts_with("image/") {
+                        ev.prevent_default();
+                        
+                        // Get the textarea element for later use
+                        let textarea_opt: Option<web_sys::HtmlTextAreaElement> = ev.target()
+                            .and_then(|t| t.dyn_into::<web_sys::HtmlTextAreaElement>().ok());
+                        
+                        if let Ok(Some(file)) = item.get_as_file() {
+                            let set_memo = set_memo_content.clone();
+                            
+                            // Read file as base64
+                            let reader = FileReader::new().unwrap();
+                            let reader_clone = reader.clone();
+                            
+                            let onload = Closure::once(Box::new(move |_: web_sys::Event| {
+                                if let Ok(result) = reader_clone.result() {
+                                    if let Some(data_url) = result.as_string() {
+                                        let textarea_for_async = textarea_opt.clone();
+                                        // Call backend to save image
+                                        spawn_local(async move {
+                                            match commands::save_clipboard_image(&data_url).await {
+                                                Ok(path) => {
+                                                    let img_markdown = format!("![]({})", path);
+                                                    
+                                                    // Use execCommand to insert text at cursor with native undo support
+                                                    if let Some(textarea) = textarea_for_async {
+                                                        // Focus the textarea
+                                                        let _ = textarea.focus();
+                                                        
+                                                        // Call document.execCommand via js_sys
+                                                        if let Some(window) = web_sys::window() {
+                                                            if let Some(document) = window.document() {
+                                                                // Use js_sys to call execCommand dynamically
+                                                                let exec_command = js_sys::Reflect::get(
+                                                                    &document,
+                                                                    &wasm_bindgen::JsValue::from_str("execCommand")
+                                                                );
+                                                                if let Ok(func) = exec_command {
+                                                                    if let Some(func) = func.dyn_ref::<js_sys::Function>() {
+                                                                        let _ = func.call3(
+                                                                            &document,
+                                                                            &wasm_bindgen::JsValue::from_str("insertText"),
+                                                                            &wasm_bindgen::JsValue::FALSE,
+                                                                            &wasm_bindgen::JsValue::from_str(&img_markdown)
+                                                                        );
+                                                                    }
+                                                                }
+                                                                // Update our signal to match textarea value
+                                                                set_memo.set(textarea.value());
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    web_sys::console::error_1(&format!("Failed to save image: {}", e).into());
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            }) as Box<dyn FnOnce(_)>);
+                            
+                            reader.set_onload(Some(onload.as_ref().unchecked_ref()));
+                            onload.forget();
+                            
+                            let _ = reader.read_as_data_url(&file);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    };
+    
     // Get title
     let title = move || {
         match editing_target.get() {
@@ -95,6 +181,7 @@ pub fn MemoEditorColumn(
                                 let textarea = target.dyn_ref::<web_sys::HtmlTextAreaElement>().unwrap();
                                 set_memo_content.set(textarea.value());
                             }
+                            on:paste=handle_paste
                             on:blur=move |_| save_memo()
                             placeholder="输入 Markdown 内容..."
                         ></textarea>

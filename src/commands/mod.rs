@@ -9,6 +9,7 @@ mod window;
 mod sync;
 mod files;
 mod dialog;
+mod clipboard;
 
 use wasm_bindgen::prelude::*;
 
@@ -26,3 +27,4 @@ pub use window::*;
 pub use sync::*;
 pub use files::*;
 pub use dialog::*;
+pub use clipboard::*;
