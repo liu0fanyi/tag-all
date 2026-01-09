@@ -37,9 +37,15 @@ pub async fn load_window_state(state: State<'_, AppState>) -> Result<Option<Wind
 }
 
 /// Resize main window to specified size (only expands, doesn't shrink)
+/// Skips resizing if window is currently maximized to prevent accidental restore
 #[tauri::command]
 pub async fn resize_window(app: AppHandle, width: u32, height: u32) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("Window not found")?;
+    
+    // Don't resize if maximized (would cause unwanted restore)
+    if window.is_maximized().unwrap_or(false) {
+        return Ok(());
+    }
     
     // Get current size
     let current_size = window.outer_size().map_err(|e| e.to_string())?;
@@ -59,9 +65,15 @@ pub async fn resize_window(app: AppHandle, width: u32, height: u32) -> Result<()
 }
 
 /// Shrink window to specified size (allows reducing size)
+/// Skips resizing if window is currently maximized to prevent accidental restore
 #[tauri::command]
 pub async fn shrink_window(app: AppHandle, width: u32, height: u32) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("Window not found")?;
+    
+    // Don't shrink if maximized (would cause unwanted restore)
+    if window.is_maximized().unwrap_or(false) {
+        return Ok(());
+    }
     
     window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
         width,
