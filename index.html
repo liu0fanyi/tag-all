@@ -12,6 +12,561 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+  <script>
+    /**
+     * Lightweight Vim/Helix Modal Editor
+     * Supports: hjkl, w/b/e, dd/yy/p, i/a/o/O, Esc
+     */
+    window.VimMode = (function () {
+      const state = {
+        mode: 'insert', // 'normal' or 'insert'
+        register: '',   // yanked text
+        pending: '',    // pending command (e.g., 'd' waiting for 'd')
+      };
+
+      // Block cursor element
+      let cursorEl = null;
+
+      function createCursor() {
+        if (!cursorEl) {
+          cursorEl = document.createElement('div');
+          cursorEl.className = 'vim-block-cursor';
+          document.body.appendChild(cursorEl);
+        }
+      }
+
+      function updateBlockCursor(textarea) {
+        if (state.mode === 'normal' && document.activeElement === textarea) {
+          createCursor();
+          const pos = textarea.selectionStart;
+          const coords = getCursorXY(textarea, pos);
+          const rect = textarea.getBoundingClientRect();
+          const scrollTop = textarea.scrollTop;
+
+          // Calculate absolute position
+          // coords are relative to padding-box origin (-scrollTop to get visual position)
+          const visibleTop = coords.top - scrollTop;
+          const visibleLeft = coords.left - textarea.scrollLeft;
+
+          // Get exact border widths to offset the cursor correctly
+          const computedStyle = getComputedStyle(textarea);
+          const borderTop = parseFloat(computedStyle.borderTopWidth) || 0;
+          const borderLeft = parseFloat(computedStyle.borderLeftWidth) || 0;
+
+          // Only show if inside visible content area (approx)
+          if (visibleTop >= -coords.height && visibleTop <= textarea.clientHeight &&
+            visibleLeft >= 0 && visibleLeft <= textarea.clientWidth) {
+
+            cursorEl.style.display = 'block';
+            // rect.top is border-box top. content starts at rect.top + borderTop
+            cursorEl.style.top = (rect.top + borderTop + visibleTop + window.scrollY) + 'px';
+            cursorEl.style.left = (rect.left + borderLeft + visibleLeft + window.scrollX) + 'px';
+            cursorEl.style.height = coords.height + 'px';
+
+            // Measure character width at cursor? 
+            // We can assume monospaced, but better to measure.
+            // Actually getCursorXY logic just gave point.
+            // Let's set a default min-width but try to match content.
+            // For now fixed width is safer/easier, or just a square.
+            // Let's grab the char at cursor to measure width?
+            // Simple: just use "ch" unit if font is mono, or measure 'M'
+            cursorEl.style.width = '1ch';
+
+            // Get character under cursor to display in inverted color?
+            // That's complex (requires overlaying text).
+            // Classic web VIM usually just uses semi-transparent block.
+            cursorEl.textContent = textarea.value[pos] || ' ';
+          } else {
+            cursorEl.style.display = 'none';
+          }
+        } else {
+          if (cursorEl) cursorEl.style.display = 'none';
+        }
+      }
+
+      // Word boundaries for w/b/e
+      // Only treat Alphanumeric (Latins, numbers, _) and Hanzi (Chinese chars) as distinct "word characters".
+      // Punctuation (both ASCII and CJK full-width) will be treated as "non-word characters", acting as delimiters or separate words.
+      const isWordChar = c => /[\w\u4e00-\u9fa5]/.test(c);
+      const isWhitespace = c => /\s/.test(c);
+
+      function getLineInfo(textarea) {
+        const text = textarea.value;
+        const pos = textarea.selectionStart;
+        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+        const lineEnd = text.indexOf('\n', pos);
+        return {
+          lineStart,
+          lineEnd: lineEnd === -1 ? text.length : lineEnd,
+          lineText: text.substring(lineStart, lineEnd === -1 ? text.length : lineEnd)
+        };
+      }
+
+      // Helper to calculate cursor coordinates
+      function getCursorXY(textarea, selectionPoint) {
+        const {
+          scrollTop,
+          scrollLeft,
+          clientWidth,
+          clientHeight
+        } = textarea;
+
+        // Create a dummy div to mirror the textarea
+        const div = document.createElement('div');
+
+        // Copy styles - copy EVERY relevant font/text property
+        const copyStyle = getComputedStyle(textarea);
+        for (const prop of [
+          'font-family', 'font-size', 'font-weight', 'font-style', 'letter-spacing',
+          'line-height', 'text-transform', 'word-spacing', 'text-indent',
+          'white-space', 'word-wrap', 'word-break', 'overflow-wrap', 'tab-size',
+          'padding-left', 'padding-right', 'padding-top', 'padding-bottom',
+          'direction', 'text-align'
+        ]) {
+          div.style[prop] = copyStyle[prop].toString(); // Ensure string copy
+        }
+
+        // Also handling 'zoom' if it exists (non-standard but common source of mismatch)
+        if (copyStyle['zoom']) div.style['zoom'] = copyStyle['zoom'];
+
+        // Explicitly force line-height to be a pixel value if possible
+        // But getComputedStyle usually returns px for line-height unless it's 'normal'
+        // If 'normal', we might have issues. 
+
+        // Specific styles for the mirror div
+        div.style.position = 'absolute';
+        div.style.top = '0px';
+        div.style.left = '0px';
+        div.style.visibility = 'hidden';
+        div.style.overflow = 'hidden';
+
+        // Use standard pre-wrap to match textarea default behavior
+        div.style.whiteSpace = 'pre-wrap';
+
+        // Match content box width (excluding scrollbar and borders)
+        // clientWidth is padding-box width (content + padding)
+        // We set div to copy padding, so we want div's *padding-box* width to match
+        div.style.boxSizing = 'border-box';
+        div.style.width = clientWidth + 'px';
+        div.style.border = 'none';
+        div.style.margin = '0';
+
+        // Set text
+        div.textContent = textarea.value.substring(0, selectionPoint);
+
+        // Add a span to mark the cursor position
+        const span = document.createElement('span');
+        span.textContent = '|';
+        div.appendChild(span);
+
+        document.body.appendChild(div);
+
+        const spanRect = span.getBoundingClientRect();
+        const divRect = div.getBoundingClientRect();
+
+        const coordinates = {
+          // Relative to the content/padding-box origin (0,0) of the div
+          // This includes padding offset + text flow position
+          top: spanRect.top - divRect.top,
+          left: spanRect.left - divRect.left,
+          height: parseInt(copyStyle['line-height']) || 20
+        };
+
+        document.body.removeChild(div);
+        return coordinates;
+      }
+
+      function moveCursor(textarea, newPos) {
+        const pos = Math.max(0, Math.min(newPos, textarea.value.length));
+        textarea.setSelectionRange(pos, pos);
+
+        // coords relative to padding-box origin
+        const coords = getCursorXY(textarea, pos);
+        const { scrollTop, clientHeight } = textarea;
+
+        // Adjust logic for scrolling using coords
+        // coords.top is the pixel distance from the top of the PADDING box to the cursor
+        // If content is scrolled, the visible top of padding box is at scrollTop?
+        // No, scrollTop is how much the content is shifted up
+
+        // Visible cursor Y = coords.top - scrollTop
+        if (coords.top < scrollTop) {
+          textarea.scrollTop = coords.top;
+        } else if (coords.top + coords.height > scrollTop + clientHeight) {
+          textarea.scrollTop = coords.top + coords.height - clientHeight + coords.height;
+        }
+
+        updateBlockCursor(textarea);
+      }
+
+      function findNextWord(text, pos) {
+        if (pos >= text.length) return pos;
+
+        let i = pos;
+        let startType = isWordChar(text[i]);
+
+        // 1. Skip current word or sequence of same-type non-word chars
+        while (i < text.length) {
+          let currentType = isWordChar(text[i]);
+          let isSpace = isWhitespace(text[i]);
+
+          // If we hit whitespace, stop skipping word
+          if (isSpace) break;
+          // If type changes (word <-> punctuation), stop
+          if (currentType !== startType) break;
+          i++;
+        }
+
+        // 2. Skip whitespace to find start of next
+        while (i < text.length && isWhitespace(text[i])) {
+          i++;
+        }
+
+        return i;
+      }
+
+      function findPrevWord(text, pos) {
+        if (pos <= 0) return 0;
+        let i = pos - 1;
+
+        // 1. Skip whitespace backwards
+        while (i > 0 && isWhitespace(text[i])) {
+          i--;
+        }
+
+        // 2. Determine type of distinct word end
+        let endType = isWordChar(text[i]);
+
+        // 3. Go back to start of this word/punctuation block
+        while (i > 0) {
+          let prevChar = text[i - 1];
+          if (isWhitespace(prevChar)) break;
+          if (isWordChar(prevChar) !== endType) break;
+          i--;
+        }
+
+        return i;
+      }
+
+      function findWordEnd(text, pos) {
+        if (pos >= text.length - 1) return text.length - 1;
+
+        let i = pos + 1;
+
+        // 1. Skip whitespace forward
+        while (i < text.length && isWhitespace(text[i])) {
+          i++;
+        }
+
+        if (i >= text.length) return text.length - 1;
+
+        let startType = isWordChar(text[i]);
+
+        // 2. Go to end of this word
+        while (i < text.length - 1) {
+          let nextChar = text[i + 1];
+          if (isWhitespace(nextChar)) break;
+          if (isWordChar(nextChar) !== startType) break;
+          i++;
+        }
+
+        return i;
+      }
+
+      function handleNormalMode(e, textarea) {
+        const key = e.key;
+        const text = textarea.value;
+        const pos = textarea.selectionStart;
+        const { lineStart, lineEnd, lineText } = getLineInfo(textarea);
+
+        // Handle pending commands
+        if (state.pending === 'd') {
+          if (key === 'd') {
+            // dd - delete line
+            const newText = text.substring(0, lineStart) +
+              (lineEnd < text.length ? text.substring(lineEnd + 1) : '');
+            state.register = lineText + '\n';
+            textarea.value = newText;
+            moveCursor(textarea, lineStart);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          state.pending = '';
+          e.preventDefault();
+          return;
+        }
+
+        if (state.pending === 'y') {
+          if (key === 'y') {
+            // yy - yank line
+            state.register = lineText + '\n';
+          }
+          state.pending = '';
+          e.preventDefault();
+          return;
+        }
+
+        switch (key) {
+          // Mode switch
+          case 'i':
+            state.mode = 'insert';
+            updateModeIndicator(textarea);
+            e.preventDefault();
+            break;
+          case 'a':
+            state.mode = 'insert';
+            moveCursor(textarea, pos + 1);
+            updateModeIndicator(textarea);
+            e.preventDefault();
+            break;
+          case 'o':
+            state.mode = 'insert';
+            const newLinePos = lineEnd;
+            textarea.value = text.substring(0, lineEnd) + '\n' + text.substring(lineEnd);
+            moveCursor(textarea, newLinePos + 1);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            updateModeIndicator(textarea);
+            e.preventDefault();
+            break;
+          case 'O':
+            state.mode = 'insert';
+            textarea.value = text.substring(0, lineStart) + '\n' + text.substring(lineStart);
+            moveCursor(textarea, lineStart);
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            updateModeIndicator(textarea);
+            e.preventDefault();
+            break;
+
+          // Navigation
+          case 'h':
+            moveCursor(textarea, pos - 1);
+            e.preventDefault();
+            break;
+          case 'j':
+            // Move down one line
+            const colJ = pos - lineStart;
+            const nextLineStart = lineEnd + 1;
+            if (nextLineStart <= text.length) {
+              const nextLineEnd = text.indexOf('\n', nextLineStart);
+              const nextLineLen = (nextLineEnd === -1 ? text.length : nextLineEnd) - nextLineStart;
+              moveCursor(textarea, nextLineStart + Math.min(colJ, nextLineLen));
+            }
+            e.preventDefault();
+            break;
+          case 'k':
+            // Move up one line
+            const colK = pos - lineStart;
+            if (lineStart > 0) {
+              const prevLineEnd = lineStart - 1;
+              const prevLineStart = text.lastIndexOf('\n', prevLineEnd - 1) + 1;
+              const prevLineLen = prevLineEnd - prevLineStart;
+              moveCursor(textarea, prevLineStart + Math.min(colK, prevLineLen));
+            }
+            e.preventDefault();
+            break;
+          case 'l':
+            moveCursor(textarea, pos + 1);
+            e.preventDefault();
+            break;
+
+          // Word motion
+          case 'w':
+            moveCursor(textarea, findNextWord(text, pos));
+            e.preventDefault();
+            break;
+          case 'b':
+            moveCursor(textarea, findPrevWord(text, pos));
+            e.preventDefault();
+            break;
+          case 'e':
+            moveCursor(textarea, findWordEnd(text, pos));
+            e.preventDefault();
+            break;
+
+          // Line start/end
+          case '0':
+            moveCursor(textarea, lineStart);
+            e.preventDefault();
+            break;
+          case '$':
+            moveCursor(textarea, lineEnd);
+            e.preventDefault();
+            break;
+
+          // Operators
+          case 'd':
+            // Single d - delete character at cursor
+            if (pos < text.length) {
+              state.register = text[pos];
+              textarea.value = text.substring(0, pos) + text.substring(pos + 1);
+              moveCursor(textarea, pos);
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            e.preventDefault();
+            break;
+          case 'D':
+            // D - delete to end of line  
+            state.pending = 'D';
+            e.preventDefault();
+            break;
+          case 'y':
+            state.pending = 'y';
+            e.preventDefault();
+            break;
+          case 'p':
+            // Paste after cursor
+            if (state.register) {
+              const pastePos = state.register.endsWith('\n') ? lineEnd + 1 : pos + 1;
+              const insertPos = Math.min(pastePos, text.length);
+              textarea.value = text.substring(0, insertPos) + state.register + text.substring(insertPos);
+              moveCursor(textarea, insertPos + state.register.length);
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            e.preventDefault();
+            break;
+          case 'P':
+            // Paste before cursor
+            if (state.register) {
+              const insertPos = state.register.endsWith('\n') ? lineStart : pos;
+              textarea.value = text.substring(0, insertPos) + state.register + text.substring(insertPos);
+              moveCursor(textarea, insertPos);
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            e.preventDefault();
+            break;
+
+          // Undo/Redo
+          case 'u':
+            document.execCommand('undo');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            e.preventDefault();
+            break;
+          case 'U':
+            document.execCommand('redo');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            e.preventDefault();
+            break;
+        }
+      }
+
+      function updateModeIndicator(textarea) {
+        // Update visual indicator
+        if (state.mode === 'normal') {
+          // Hide native caret in normal mode
+          textarea.style.caretColor = 'transparent';
+          textarea.style.borderColor = '#f66';
+          textarea.classList.add('vim-normal-mode');
+          textarea.classList.remove('vim-insert-mode');
+        } else {
+          textarea.style.caretColor = '';
+          textarea.style.borderColor = '';
+          textarea.classList.add('vim-insert-mode');
+          textarea.classList.remove('vim-normal-mode');
+        }
+
+        // Update block cursor visibility
+        updateBlockCursor(textarea);
+
+        // Dispatch custom event for mode change
+        textarea.dispatchEvent(new CustomEvent('vimmodechange', {
+          bubbles: true,
+          detail: { mode: state.mode }
+        }));
+      }
+
+      function attach(textarea) {
+        textarea.addEventListener('keydown', function (e) {
+          // Escape always returns to normal mode
+          if (e.key === 'Escape') {
+            state.mode = 'normal';
+            state.pending = '';
+            updateModeIndicator(textarea);
+            e.preventDefault();
+            return;
+          }
+
+          if (state.mode === 'normal') {
+            handleNormalMode(e, textarea);
+            // Ensure cursor updates after action
+            requestAnimationFrame(() => updateBlockCursor(textarea));
+          } else {
+            // In insert mode, hide block cursor
+            if (cursorEl) cursorEl.style.display = 'none';
+          }
+        });
+
+        // Update block cursor on click/focus/scroll
+        const update = () => {
+          if (state.mode === 'normal') updateBlockCursor(textarea);
+          else if (cursorEl) cursorEl.style.display = 'none';
+        };
+
+        textarea.addEventListener('click', update);
+        textarea.addEventListener('focus', update);
+        textarea.addEventListener('scroll', update);
+        textarea.addEventListener('input', update);
+        // Also update on window resize/scroll in case of layout changes
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update); // Capture phase if needed?
+
+        // Start in insert mode
+        state.mode = 'insert';
+        updateModeIndicator(textarea);
+      }
+
+      return { attach, state };
+    })();
+
+    // Auto-attach to memo textareas
+    document.addEventListener('DOMContentLoaded', function () {
+      const observer = new MutationObserver(function () {
+        document.querySelectorAll('.memo-textarea').forEach(textarea => {
+          if (!textarea.dataset.vimAttached) {
+            window.VimMode.attach(textarea);
+            textarea.dataset.vimAttached = 'true';
+          }
+        });
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+  </script>
+
+  <style>
+    /* Vim mode indicator badge */
+    .vim-mode-indicator {
+      display: inline-block;
+      padding: 2px 8px;
+      margin-left: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .vim-mode-indicator.normal {
+      background: #f66;
+      color: white;
+    }
+
+    .vim-mode-indicator.insert {
+      background: #6b6;
+      color: white;
+    }
+
+    /* Vim normal mode - hide native caret */
+    .memo-textarea.vim-normal-mode {
+      caret-color: transparent;
+    }
+
+    /* Custom block cursor */
+    .vim-block-cursor {
+      position: absolute;
+      background-color: rgba(255, 100, 100, 0.5);
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+    }
+  </style>
 </head>
 
 <body></body>

@@ -161,11 +161,15 @@ pub fn MemoEditorColumn(
         html
     };
     
+    // Vim mode indicator
+    let (vim_mode, set_vim_mode) = signal(String::from("insert"));
+    
     view! {
         <Show when=move || editing_target.get().is_some()>
             <div class="memo-editor-column">
                 <div class="memo-editor-header">
                     <span class="memo-editor-title">{title}</span>
+                    <span class=move || format!("vim-mode-indicator {}", vim_mode.get())>{move || vim_mode.get()}</span>
                     <button class="close-btn" on:click=move |_| set_editing_target.set(None)>"×"</button>
                 </div>
                 
@@ -181,9 +185,16 @@ pub fn MemoEditorColumn(
                                 let textarea = target.dyn_ref::<web_sys::HtmlTextAreaElement>().unwrap();
                                 set_memo_content.set(textarea.value());
                             }
+                            on:vimmodechange=move |ev: web_sys::CustomEvent| {
+                                if let Some(mode) = js_sys::Reflect::get(&ev.detail(), &wasm_bindgen::JsValue::from_str("mode")).ok() {
+                                    if let Some(mode_str) = mode.as_string() {
+                                        set_vim_mode.set(mode_str);
+                                    }
+                                }
+                            }
                             on:paste=handle_paste
                             on:blur=move |_| save_memo()
-                            placeholder="输入 Markdown 内容..."
+                            placeholder="输入 Markdown 内容... (按 Esc 进入 Normal 模式)"
                         ></textarea>
                     </div>
                     
