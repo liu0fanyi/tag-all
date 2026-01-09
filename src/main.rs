@@ -7,6 +7,7 @@ mod context;
 mod store;
 mod components;
 mod app;
+mod markdown;
 
 use app::App;
 use leptos::prelude::*;

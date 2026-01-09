@@ -10,87 +10,7 @@ use crate::commands;
 use crate::context::AppContext;
 use crate::components::{EditTarget, DeleteConfirmButton};
 use crate::store::{use_app_store, store_update_item, store_remove_item, AppStateStoreFields};
-
-/// Parse text with custom color syntax: *r*red text*r*, *g*green*g*, etc.
-/// Supported colors: r(red), g(green), b(blue), y(yellow), o(orange), p(purple)
-fn parse_colored_text(text: &str) -> String {
-    let mut result = String::new();
-    let mut chars = text.chars().peekable();
-    
-    while let Some(c) = chars.next() {
-        if c == '*' {
-            // Check for color code pattern: *X*
-            if let Some(&color_char) = chars.peek() {
-                let color = match color_char {
-                    'r' => Some("#e74c3c"), // red
-                    'g' => Some("#27ae60"), // green
-                    'b' => Some("#3498db"), // blue
-                    'y' => Some("#f1c40f"), // yellow
-                    'o' => Some("#e67e22"), // orange
-                    'p' => Some("#9b59b6"), // purple
-                    _ => None,
-                };
-                
-                if let Some(color_hex) = color {
-                    chars.next(); // consume color char
-                    if chars.peek() == Some(&'*') {
-                        chars.next(); // consume closing *
-                        
-                        // Find the closing *X* pattern
-                        let mut colored_content = String::new();
-                        let mut found_close = false;
-                        
-                        while let Some(inner_c) = chars.next() {
-                            if inner_c == '*' {
-                                if chars.peek() == Some(&color_char) {
-                                    chars.next(); // consume color char
-                                    if chars.peek() == Some(&'*') {
-                                        chars.next(); // consume closing *
-                                        found_close = true;
-                                        break;
-                                    } else {
-                                        colored_content.push('*');
-                                        colored_content.push(color_char);
-                                    }
-                                } else {
-                                    colored_content.push('*');
-                                }
-                            } else {
-                                colored_content.push(inner_c);
-                            }
-                        }
-                        
-                        if found_close {
-                            result.push_str(&format!(
-                                "<span style=\"color: {}\">{}</span>",
-                                color_hex,
-                                escape_html(&colored_content)
-                            ));
-                        } else {
-                            // No closing tag, output as-is
-                            result.push('*');
-                            result.push(color_char);
-                            result.push('*');
-                            result.push_str(&escape_html(&colored_content));
-                        }
-                        continue;
-                    }
-                }
-            }
-        }
-        // Regular character
-        result.push_str(&escape_html(&c.to_string()));
-    }
-    
-    result
-}
-
-fn escape_html(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
+use crate::markdown::parse_markdown_inline;
 
 /// A single item row in the tree
 #[component]
@@ -358,10 +278,10 @@ pub fn TreeItem(
                 }.into_any()
             }}
             
-            // Text with position (supports color syntax like *r*red text*r*)
+            // Text with position (supports color syntax like %r%red text%r%)
             {
                 let formatted_text = format!("[{}] {}", position, text);
-                let html_text = parse_colored_text(&formatted_text);
+                let html_text = parse_markdown_inline(&formatted_text);
                 view! {
                     <span class="item-text" inner_html=html_text></span>
                 }
