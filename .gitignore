@@ -1,3 +1,9 @@
 /dist/
 /target/
 /Cargo.lock
+
+# Android signing
+*.jks
+*.keystore
+keystore.properties
+local.properties
