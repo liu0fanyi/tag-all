@@ -40,25 +40,28 @@ pub async fn load_window_state(state: State<'_, AppState>) -> Result<Option<Wind
 /// Skips resizing if window is currently maximized to prevent accidental restore
 #[tauri::command]
 pub async fn resize_window(app: AppHandle, width: u32, height: u32) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("Window not found")?;
-    
-    // Don't resize if maximized (would cause unwanted restore)
-    if window.is_maximized().unwrap_or(false) {
-        return Ok(());
-    }
-    
-    // Get current size
-    let current_size = window.outer_size().map_err(|e| e.to_string())?;
-    
-    // Only resize if new size is larger (expand, don't shrink)
-    let new_width = width.max(current_size.width);
-    let new_height = height.max(current_size.height);
-    
-    if new_width != current_size.width || new_height != current_size.height {
-        window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-            width: new_width,
-            height: new_height,
-        })).map_err(|e| e.to_string())?;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let window = app.get_webview_window("main").ok_or("Window not found")?;
+        
+        // Don't resize if maximized (would cause unwanted restore)
+        if window.is_maximized().unwrap_or(false) {
+            return Ok(());
+        }
+        
+        // Get current size
+        let current_size = window.outer_size().map_err(|e| e.to_string())?;
+        
+        // Only resize if new size is larger (expand, don't shrink)
+        let new_width = width.max(current_size.width);
+        let new_height = height.max(current_size.height);
+        
+        if new_width != current_size.width || new_height != current_size.height {
+            window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: new_width,
+                height: new_height,
+            })).map_err(|e| e.to_string())?;
+        }
     }
     
     Ok(())
@@ -68,17 +71,20 @@ pub async fn resize_window(app: AppHandle, width: u32, height: u32) -> Result<()
 /// Skips resizing if window is currently maximized to prevent accidental restore
 #[tauri::command]
 pub async fn shrink_window(app: AppHandle, width: u32, height: u32) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("Window not found")?;
-    
-    // Don't shrink if maximized (would cause unwanted restore)
-    if window.is_maximized().unwrap_or(false) {
-        return Ok(());
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let window = app.get_webview_window("main").ok_or("Window not found")?;
+        
+        // Don't shrink if maximized (would cause unwanted restore)
+        if window.is_maximized().unwrap_or(false) {
+            return Ok(());
+        }
+        
+        window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width,
+            height,
+        })).map_err(|e| e.to_string())?;
     }
-    
-    window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-        width,
-        height,
-    })).map_err(|e| e.to_string())?;
     
     Ok(())
 }
@@ -86,23 +92,32 @@ pub async fn shrink_window(app: AppHandle, width: u32, height: u32) -> Result<()
 /// Set window always-on-top state
 #[tauri::command]
 pub async fn set_pinned(app: AppHandle, pinned: bool) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("Window not found")?;
-    window.set_always_on_top(pinned).map_err(|e| e.to_string())?;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let window = app.get_webview_window("main").ok_or("Window not found")?;
+        window.set_always_on_top(pinned).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
 /// Minimize window
 #[tauri::command]
 pub async fn minimize_window(app: AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("Window not found")?;
-    window.minimize().map_err(|e| e.to_string())?;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let window = app.get_webview_window("main").ok_or("Window not found")?;
+        window.minimize().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
 /// Close window
 #[tauri::command]
 pub async fn close_window(app: AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("Window not found")?;
-    window.close().map_err(|e| e.to_string())?;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let window = app.get_webview_window("main").ok_or("Window not found")?;
+        window.close().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
