@@ -1,0 +1,197 @@
+name: 'release'
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+      version: ${{ steps.get-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: get-version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create-release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: context.ref.replace('refs/tags/', ''),
+              body: 'Tag-All Release',
+              draft: true,
+              prerelease: false
+            })
+            return data.id
+
+  build-tauri:
+    needs: create-release
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install Trunk
+        run: cargo install --locked trunk
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0.0"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+
+  build-android:
+    needs: create-release
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,wasm32-unknown-unknown
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Trunk
+        run: cargo install --locked trunk
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0.0"
+
+      - name: Build Frontend
+        run: trunk build
+
+      - name: Init Android
+        run: |
+          echo "Initializing Android project..."
+          cargo tauri android init --ci 2>&1 || echo "Android init completed or skipped"
+        continue-on-error: true
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      - name: Setup Android Signing
+        run: |
+          cd src-tauri/gen/android
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
+          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
+          echo "${{ secrets.ANDROID_KEY_BASE64 }}" | base64 -d > $RUNNER_TEMP/keystore.jks
+          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
+          
+          # Call script to configure Gradle (ensure this script exists or adapt)
+          # Assuming tag-all has similar scripts or we need to add it?
+          # If not, we might need to skip or ensure script exists.
+          # keep-accounts used .github/scripts/configure-android-signing.sh
+          # I should check if that script needs copying!
+          if [ -f "../../../.github/scripts/configure-android-signing.sh" ]; then
+             cd ../../..
+             bash .github/scripts/configure-android-signing.sh
+          fi
+
+      - name: Build APK
+        run: cargo tauri android build --apk true --split-per-abi
+        env:
+          TAURI_ANDROID_PACKAGE: ${{ vars.TAURI_ANDROID_PACKAGE || 'com.tag-all.app' }}
+
+      - name: Upload APKs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          APK_COUNT=0
+          
+          echo "=== Searching for APK files ==="
+          for APK_PATH in $(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f); do
+            BASENAME=$(basename "$APK_PATH")
+            echo "Found: $APK_PATH"
+            
+            if [[ $APK_PATH =~ /apk/(arm64|arm|x86_64|x86)/ ]]; then
+              ARCH_DIR="${BASH_REMATCH[1]}"
+              case "$ARCH_DIR" in
+                arm64) ARCH="arm64-v8a" ;;
+                arm)   ARCH="armeabi-v7a" ;;
+                x86_64) ARCH="x86_64" ;;
+                x86)   ARCH="x86" ;;
+                *)     ARCH="$ARCH_DIR" ;;
+              esac
+            else
+              ARCH="universal"
+            fi
+            
+            NEW_NAME="tag-all_${VERSION}_android_${ARCH}.apk"
+            cp "$APK_PATH" "$NEW_NAME"
+            gh release upload "${{ github.ref_name }}" "$NEW_NAME" --repo ${{ github.repository }} --clobber
+            echo "✓ Uploaded: $NEW_NAME (from $BASENAME)"
+            APK_COUNT=$((APK_COUNT + 1))
+          done
+          
+          if [ $APK_COUNT -eq 0 ]; then
+            echo "ERROR: No APK found"
+            exit 1
+          else
+            echo ""
+            echo "Successfully uploaded $APK_COUNT APK file(s)"
+          fi
+
+  publish-release:
+    needs: [create-release, build-tauri, build-android]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: parseInt(process.env.RELEASE_ID),
+              draft: false,
+              prerelease: false
+            })

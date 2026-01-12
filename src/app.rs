@@ -11,6 +11,7 @@ use crate::commands;
 use crate::context::AppContext;
 use crate::store::{AppState, AppStateStoreFields};
 use crate::components::{NewItemForm, TagColumn, TagEditor, ItemTreeView, EditTarget, WorkspaceTabBar, MemoEditorColumn, TitleBar, SyncModal, FilesWorkspace, TagDndContext};
+use crate::mobile::MobileApp;
 
 /// Filter mode for tag-based item filtering
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -30,6 +31,22 @@ pub enum SortMode {
 
 #[component]
 pub fn App() -> impl IntoView {
+    // Check mobile
+    let is_mobile = move || {
+        if let Some(w) = web_sys::window() {
+            if let Ok(width) = w.inner_width() {
+                if let Some(val) = width.as_f64() {
+                    return val < 768.0;
+                }
+            }
+        }
+        false
+    };
+
+    if is_mobile() {
+        return view! { <MobileApp /> }.into_any();
+    }
+
     // Create and provide the global store
     let store = Store::new(AppState::new());
     provide_context(store);
@@ -420,5 +437,5 @@ pub fn App() -> impl IntoView {
                 </div>
             }.into_any()
         }}
-    }
+    }.into_any()
 }

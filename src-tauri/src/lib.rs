@@ -87,6 +87,11 @@ pub fn run() {
         })
         .setup(|app| {
             let app_handle = app.handle().clone();
+
+            // Initialize logging
+            rolling_logger::init_logger(
+                app_handle.path().app_log_dir().expect("failed to get log dir")
+            ).expect("failed to init rolling logger");
             
             // Initialize database
             tauri::async_runtime::block_on(async move {

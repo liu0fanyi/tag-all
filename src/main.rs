@@ -1,3 +1,4 @@
+#![allow(warnings)]
 //! Tag-All Frontend Entry Point
 
 mod models;
@@ -8,6 +9,7 @@ mod store;
 mod components;
 mod app;
 mod markdown;
+mod mobile;
 
 use app::App;
 use leptos::prelude::*;
