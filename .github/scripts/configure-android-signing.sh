@@ -33,6 +33,7 @@ if ! grep -q "signingConfigs" "$GRADLE_FILE"; then
             keyPassword = keystoreProperties[\"password\"] as String\\
             storeFile = file(keystoreProperties[\"storeFile\"] as String)\\
             storePassword = keystoreProperties[\"password\"] as String\\
+            storeType = \"jks\"\\
         }\\
     }\\
 \\
