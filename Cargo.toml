@@ -48,10 +48,10 @@ syntect = { version = "5.0", default-features = false, features = ["default-fanc
 percent-encoding = "2.3"
 
 # DnD
-leptos-dragdrop = { path = "../crates/leptos-dragdrop" }
+leptos-dragdrop = { git = "https://github.com/liu0fanyi/tauri-crates.git" }
 
 # Shared sync UI components (WASM only)
-tauri-sync-db-frontend = { path = "../crates/tauri-sync-db-frontend" }
+tauri-sync-db-frontend = { git = "https://github.com/liu0fanyi/tauri-crates.git" }
 
 [workspace]
 members = ["src-tauri"]

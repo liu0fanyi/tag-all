@@ -25,7 +25,7 @@ tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
 # Database and sync (now using shared crate)
-tauri-sync-db-backend = { path = "../../crates/tauri-sync-db-backend" }
+tauri-sync-db-backend = { git = "https://github.com/liu0fanyi/tauri-crates.git" }
 libsql = { version = "0.9", features = ["sync"] }
 pinyin = "0.10.0"
 blake3 = "1.8.2"
@@ -37,6 +37,6 @@ percent-encoding = "2.3.2"
 base64 = "0.22"
 regex = "1"
 reqwest = { version = "0.13.1", features = ["json"] }
-rolling-logger = { path = "../../crates/rolling-logger" }
+rolling-logger = { git = "https://github.com/liu0fanyi/tauri-crates.git" }
 chrono = "0.4"
 log = "0.4"
