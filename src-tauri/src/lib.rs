@@ -90,7 +90,8 @@ pub fn run() {
 
             // Initialize logging
             rolling_logger::init_logger(
-                app_handle.path().app_log_dir().expect("failed to get log dir")
+                app_handle.path().app_log_dir().expect("failed to get log dir"),
+                "TagAll"
             ).expect("failed to init rolling logger");
             
             // Initialize database

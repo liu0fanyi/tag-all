@@ -48,13 +48,13 @@ syntect = { version = "5.0", default-features = false, features = ["default-fanc
 percent-encoding = "2.3"
 
 # DnD
-leptos-dragdrop = { path = "crates/leptos-dragdrop" }
+leptos-dragdrop = { path = "../crates/leptos-dragdrop" }
 
 # Shared sync UI components (WASM only)
 tauri-sync-db-frontend = { path = "../crates/tauri-sync-db-frontend" }
 
 [workspace]
-members = ["src-tauri", "crates/leptos-dragdrop", "crates/rolling-logger"]
+members = ["src-tauri"]
 
 [workspace.dependencies]
 chrono = { version = "0.4", features = ["serde"] }
