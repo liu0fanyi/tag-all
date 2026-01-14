@@ -50,6 +50,9 @@ percent-encoding = "2.3"
 # DnD
 leptos-dragdrop = { path = "crates/leptos-dragdrop" }
 
+# Shared sync UI components (WASM only)
+tauri-sync-db-frontend = { path = "../crates/tauri-sync-db-frontend" }
+
 [workspace]
 members = ["src-tauri", "crates/leptos-dragdrop", "crates/rolling-logger"]
 

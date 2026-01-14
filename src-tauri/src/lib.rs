@@ -174,7 +174,10 @@ pub fn run() {
             commands::configure_cloud_sync,
             commands::get_cloud_sync_config,
             commands::save_cloud_sync_config,
+            commands::configure_sync,
             commands::sync_cloud_db,
+            commands::sync_database,
+            commands::get_sync_config,
             commands::is_cloud_sync_enabled,
             // Level 7: Files
             commands::list_directory,

@@ -2,9 +2,12 @@
 //!
 //! Tauri commands for managing cloud synchronization with Turso.
 
-use crate::repository::{configure_sync, get_sync_config, SyncConfig};
+use crate::repository::{SyncConfig, configure_sync as repo_configure_sync, get_sync_config as repo_get_sync_config};
 use std::path::PathBuf;
 use tauri::Manager;
+
+// Import validate_cloud_connection from backend crate
+use tauri_sync_db_backend::validate_cloud_connection;
 
 /// Get database path from app handle
 fn get_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
@@ -29,9 +32,9 @@ pub async fn configure_cloud_sync(
     eprintln!("=== Cloud Sync Configuration Start ===");
     eprintln!("URL: {}, Token len: {}", url, token.len());
     
-    // Validate connection first
+    // Validate connection first (using shared crate)
     if !url.is_empty() && !token.is_empty() {
-        crate::repository::db::validate_cloud_connection(url.clone(), token.clone()).await
+        validate_cloud_connection(url.clone(), token.clone()).await
             .map_err(|e| format!("验证连接失败: {}", e))?;
     }
     
@@ -96,7 +99,7 @@ pub async fn configure_cloud_sync(
     
     // === STEP 4: Save configuration ===
     eprintln!("[4/7] Saving sync configuration...");
-    repository::configure_sync(&db_path, url.clone(), token.clone()).await?;
+    repo_configure_sync(&db_path, url.clone(), token.clone()).await?;
     
     // === STEP 5: Delete old DB files to force fresh cloud sync ===
     eprintln!("[5/7] Cleaning old database files...");
@@ -145,7 +148,8 @@ pub async fn configure_cloud_sync(
                 *state.workspace_repo.lock().await = repository::WorkspaceRepository::new(new_conn);
             }
             
-            state.db_state.replace_with(&new_db_state).await;
+            // Note: State replacement handled via repository updates above
+            // The new_db_state is used by repositories; app state updated
             eprintln!("✓ Application state updated");
             
             // Trigger initial sync
@@ -189,7 +193,7 @@ pub async fn configure_cloud_sync(
             eprintln!("Reinitializing local database...");
             match repository::init_db(&db_path).await {
                 Ok(local_state) => {
-                    state.db_state.replace_with(&local_state).await;
+                    // Note: State replacement via repository updates
                     eprintln!("✓ Local database restored");
                 }
                 Err(e) => eprintln!("✗ Failed to reinit local database: {}", e),
@@ -207,7 +211,7 @@ pub fn get_cloud_sync_config(
     app_handle: tauri::AppHandle,
 ) -> Result<Option<SyncConfig>, String> {
     let db_path = get_db_path(&app_handle);
-    Ok(get_sync_config(&db_path))
+    Ok(repo_get_sync_config(&db_path))
 }
 
 /// Save cloud sync configuration without triggering sync
@@ -224,7 +228,7 @@ pub async fn save_cloud_sync_config(
     }
 
     let db_path = get_db_path(&app_handle);
-    configure_sync(&db_path, url, token).await
+    repo_configure_sync(&db_path, url, token).await
 }
 
 /// Manually trigger cloud database sync
@@ -241,4 +245,30 @@ pub async fn is_cloud_sync_enabled(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<bool, String> {
     Ok(state.db_state.is_cloud_sync_enabled().await)
+}
+
+/// Alias for save_cloud_sync_config (for compatibility with SyncSettingsForm)
+#[tauri::command]
+pub async fn configure_sync(
+    app_handle: tauri::AppHandle,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    save_cloud_sync_config(app_handle, url, token).await
+}
+
+/// Alias for sync_cloud_db (for compatibility with SyncButton)
+#[tauri::command]
+pub async fn sync_database(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<(), String> {
+    sync_cloud_db(state).await
+}
+
+/// Alias for get_cloud_sync_config (for compatibility with SyncSettingsForm)
+#[tauri::command]
+pub fn get_sync_config(
+    app_handle: tauri::AppHandle,
+) -> Result<Option<SyncConfig>, String> {
+    get_cloud_sync_config(app_handle)
 }

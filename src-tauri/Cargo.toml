@@ -24,7 +24,8 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
-# Database (libsql for Turso cloud sync support)
+# Database and sync (now using shared crate)
+tauri-sync-db-backend = { path = "../../crates/tauri-sync-db-backend" }
 libsql = { version = "0.9", features = ["sync"] }
 pinyin = "0.10.0"
 blake3 = "1.8.2"
