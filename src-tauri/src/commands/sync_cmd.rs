@@ -26,6 +26,7 @@ pub async fn configure_cloud_sync(
 ) -> Result<(), String> {
     use crate::repository;
     use std::sync::Arc;
+use crate::repository::{TagRepository, ItemRepository, WorkspaceRepository};
     use tokio::sync::Mutex;
     use std::time::Duration;
     
@@ -138,18 +139,9 @@ pub async fn configure_cloud_sync(
             
             // === STEP 7: Update application state ===
             eprintln!("[7/7] Updating application state...");
-            let new_conn = new_db_state.get_connection().await?;
-            let new_conn = Arc::new(Mutex::new(new_conn));
             
-            {
-                *state.item_repo.lock().await = repository::ItemRepository::new(new_conn.clone());
-                *state.tag_repo.lock().await = repository::TagRepository::new(new_conn.clone());
-                *state.window_repo.lock().await = repository::WindowStateRepository::new(new_conn.clone());
-                *state.workspace_repo.lock().await = repository::WorkspaceRepository::new(new_conn);
-            }
-            
-            // Note: State replacement handled via repository updates above
-            // The new_db_state is used by repositories; app state updated
+            // Update DbState with new cloud-synced database
+            state.db_state.update_from(&new_db_state).await;
             eprintln!("✓ Application state updated");
             
             // Trigger initial sync
@@ -272,3 +264,5 @@ pub fn get_sync_config(
 ) -> Result<Option<SyncConfig>, String> {
     get_cloud_sync_config(app_handle)
 }
+
+

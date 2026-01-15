@@ -2,9 +2,11 @@
 //!
 //! Tauri commands for saving/loading window state and resizing.
 
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tauri::{State, AppHandle, Manager};
 use crate::AppState;
-use crate::repository::WindowState;
+use crate::repository::{WindowState, WindowStateRepository};
 
 /// Save window state
 #[tauri::command]
@@ -16,7 +18,8 @@ pub async fn save_window_state(
     y: f64,
     pinned: bool,
 ) -> Result<(), String> {
-    let repo = state.window_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = WindowStateRepository::new(Arc::new(Mutex::new(conn)));
     
     let window_state = WindowState {
         width,
@@ -32,7 +35,8 @@ pub async fn save_window_state(
 /// Load window state
 #[tauri::command]
 pub async fn load_window_state(state: State<'_, AppState>) -> Result<Option<WindowState>, String> {
-    let repo = state.window_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = WindowStateRepository::new(Arc::new(Mutex::new(conn)));
     repo.load().await
 }
 
@@ -121,3 +125,5 @@ pub async fn close_window(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+

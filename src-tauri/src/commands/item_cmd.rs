@@ -2,9 +2,11 @@
 //!
 //! Exposes Item operations to the frontend via Tauri IPC.
 
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tauri::State;
 use crate::domain::{Item, ItemType};
-use crate::repository::Repository;
+use crate::repository::{Repository, ItemRepository};
 use crate::repository::item::{ItemHierarchyOperations, ItemWorkspaceOperations};
 use crate::AppState;
 
@@ -17,7 +19,8 @@ pub async fn create_item(
     parent_id: Option<u32>,
     workspace_id: Option<u32>,
 ) -> Result<Item, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     
     let mut item = Item::new(
         0, // ID will be assigned by database
@@ -34,7 +37,8 @@ pub async fn create_item(
 /// List all items
 #[tauri::command]
 pub async fn list_items(state: State<'_, AppState>) -> Result<Vec<Item>, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.list().await.map_err(|e| e.to_string())
 }
 
@@ -44,7 +48,8 @@ pub async fn list_items_by_workspace(
     workspace_id: u32,
     state: State<'_, AppState>,
 ) -> Result<Vec<Item>, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.list_by_workspace(workspace_id).await.map_err(|e| e.to_string())
 }
 
@@ -54,14 +59,16 @@ pub async fn get_children(
     state: State<'_, AppState>,
     parent_id: Option<u32>,
 ) -> Result<Vec<Item>, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.get_children(parent_id).await.map_err(|e| e.to_string())
 }
 
 /// Get item by ID
 #[tauri::command]
 pub async fn get_item(state: State<'_, AppState>, id: u32) -> Result<Option<Item>, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.find_by_id(id).await.map_err(|e| e.to_string())
 }
 
@@ -75,7 +82,8 @@ pub async fn update_item(
     item_type: Option<String>,
     memo: Option<String>,
 ) -> Result<Item, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     
     // First get existing item
     let existing = repo.find_by_id(id).await.map_err(|e| e.to_string())?
@@ -109,14 +117,16 @@ pub async fn update_item(
 /// Delete item (cascade deletes children)
 #[tauri::command]
 pub async fn delete_item(state: State<'_, AppState>, id: u32) -> Result<(), String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.delete(id).await.map_err(|e| e.to_string())
 }
 
 /// Toggle item completion status
 #[tauri::command]
 pub async fn toggle_item(state: State<'_, AppState>, id: u32) -> Result<Item, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     
     let mut item = repo.find_by_id(id).await.map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Item {} not found", id))?;
@@ -140,28 +150,32 @@ pub async fn move_item(
     new_parent_id: Option<u32>,
     position: i32,
 ) -> Result<(), String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.move_to(id, new_parent_id, position).await.map_err(|e| e.to_string())
 }
 
 /// Toggle collapsed state of an item
 #[tauri::command]
 pub async fn toggle_collapsed(state: State<'_, AppState>, id: u32) -> Result<bool, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.toggle_collapsed(id).await.map_err(|e| e.to_string())
 }
 
 /// Get all descendants of an item
 #[tauri::command]
 pub async fn get_descendants(state: State<'_, AppState>, id: u32) -> Result<Vec<Item>, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.get_descendants(id).await.map_err(|e| e.to_string())
 }
 
 /// Decrement current_count for countdown items
 #[tauri::command]
 pub async fn decrement_item(state: State<'_, AppState>, id: u32) -> Result<Item, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     
     let mut item = repo.find_by_id(id).await.map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Item {} not found", id))?;
@@ -182,7 +196,8 @@ pub async fn decrement_item(state: State<'_, AppState>, id: u32) -> Result<Item,
 /// Set target_count for countdown items
 #[tauri::command]
 pub async fn set_item_count(state: State<'_, AppState>, id: u32, target_count: Option<i32>) -> Result<Item, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     
     let mut item = repo.find_by_id(id).await.map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Item {} not found", id))?;
@@ -200,6 +215,7 @@ pub async fn set_item_count(state: State<'_, AppState>, id: u32, target_count: O
 /// Reset all completed items in a workspace back to incomplete
 #[tauri::command]
 pub async fn reset_all_items(state: State<'_, AppState>, workspace_id: u32) -> Result<u32, String> {
-    let repo = state.item_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
     repo.reset_all_completed(workspace_id).await.map_err(|e| e.to_string())
 }

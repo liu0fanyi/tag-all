@@ -2,6 +2,9 @@
 //!
 //! Exposes Tag CRUD and item-tag relationships to the frontend.
 
+use std::sync::Arc;
+use crate::repository::TagRepository;
+use tokio::sync::Mutex;
 use tauri::State;
 use crate::domain::Tag;
 use crate::repository::Repository;
@@ -15,7 +18,8 @@ pub async fn create_tag(
     name: String,
     color: Option<String>,
 ) -> Result<Tag, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     
     let tag = if let Some(c) = color {
         Tag::with_color(0, name, c)
@@ -29,14 +33,16 @@ pub async fn create_tag(
 /// List all tags
 #[tauri::command]
 pub async fn list_tags(state: State<'_, AppState>) -> Result<Vec<Tag>, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.list().await.map_err(|e| e.to_string())
 }
 
 /// Get tag by ID
 #[tauri::command]
 pub async fn get_tag(state: State<'_, AppState>, id: u32) -> Result<Option<Tag>, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.find_by_id(id).await.map_err(|e| e.to_string())
 }
 
@@ -48,7 +54,8 @@ pub async fn update_tag(
     name: Option<String>,
     color: Option<String>,
 ) -> Result<Tag, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     
     let existing = repo.find_by_id(id).await.map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Tag {} not found", id))?;
@@ -66,7 +73,8 @@ pub async fn update_tag(
 /// Delete tag
 #[tauri::command]
 pub async fn delete_tag(state: State<'_, AppState>, id: u32) -> Result<(), String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.delete(id).await.map_err(|e| e.to_string())
 }
 
@@ -81,7 +89,8 @@ pub async fn add_item_tag(
     item_id: u32,
     tag_id: u32,
 ) -> Result<(), String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.add_tag_to_item(item_id, tag_id).await.map_err(|e| e.to_string())
 }
 
@@ -92,7 +101,8 @@ pub async fn remove_item_tag(
     item_id: u32,
     tag_id: u32,
 ) -> Result<(), String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.remove_tag_from_item(item_id, tag_id).await.map_err(|e| e.to_string())
 }
 
@@ -102,7 +112,8 @@ pub async fn get_item_tags(
     state: State<'_, AppState>,
     item_id: u32,
 ) -> Result<Vec<Tag>, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.get_tags_for_item(item_id).await.map_err(|e| e.to_string())
 }
 
@@ -112,7 +123,8 @@ pub async fn get_items_by_tag(
     state: State<'_, AppState>,
     tag_id: u32,
 ) -> Result<Vec<u32>, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.get_items_with_tag(tag_id).await.map_err(|e| e.to_string())
 }
 
@@ -127,7 +139,8 @@ pub async fn add_tag_parent(
     child_tag_id: u32,
     parent_tag_id: u32,
 ) -> Result<(), String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.add_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
 }
 
@@ -138,7 +151,8 @@ pub async fn remove_tag_parent(
     child_tag_id: u32,
     parent_tag_id: u32,
 ) -> Result<(), String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.remove_parent_tag(child_tag_id, parent_tag_id).await.map_err(|e| e.to_string())
 }
 
@@ -148,7 +162,8 @@ pub async fn get_tag_parents(
     state: State<'_, AppState>,
     tag_id: u32,
 ) -> Result<Vec<Tag>, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.get_parent_tags(tag_id).await.map_err(|e| e.to_string())
 }
 
@@ -158,14 +173,16 @@ pub async fn get_tag_children(
     state: State<'_, AppState>,
     parent_tag_id: u32,
 ) -> Result<Vec<Tag>, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.get_child_tags(parent_tag_id).await.map_err(|e| e.to_string())
 }
 
 /// Get root tags (tags with no parents)
 #[tauri::command]
 pub async fn get_root_tags(state: State<'_, AppState>) -> Result<Vec<Tag>, String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.get_root_tags().await.map_err(|e| e.to_string())
 }
 
@@ -176,7 +193,8 @@ pub async fn move_tag(
     id: u32,
     position: i32,
 ) -> Result<(), String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.move_tag(id, position).await.map_err(|e| e.to_string())
 }
 
@@ -188,6 +206,9 @@ pub async fn move_child_tag(
     parent_tag_id: u32,
     position: i32,
 ) -> Result<(), String> {
-    let repo = state.tag_repo.lock().await;
+    let conn = state.db_state.get_connection().await?;
+    let repo = TagRepository::new(Arc::new(Mutex::new(conn)));
     repo.move_child_tag(child_tag_id, parent_tag_id, position).await.map_err(|e| e.to_string())
 }
+
+

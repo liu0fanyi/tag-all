@@ -179,10 +179,23 @@ pub fn App() -> impl IntoView {
     // Load workspaces on mount
     Effect::new(move |_| {
         let _ = reload_trigger.get();
+        
+        let load_workspaces = move || {
+            spawn_local(async move {
+                if let Ok(loaded) = commands::list_workspaces().await {
+                    *store.workspaces().write() = loaded;
+                }
+            });
+        };
+        
+        // Initial load
+        load_workspaces();
+        
+        // Listen for DB ready event
         spawn_local(async move {
-            if let Ok(loaded) = commands::list_workspaces().await {
-                *store.workspaces().write() = loaded;
-            }
+            let _ = commands::listen_safe("db-initialized", move |_| {
+                load_workspaces();
+            }).await;
         });
     });
 
@@ -190,16 +203,29 @@ pub fn App() -> impl IntoView {
     Effect::new(move |_| {
         let _ = reload_trigger.get();
         let ws_id = current_workspace.get();
+        
+        let load_items_and_tags = move || {
+            spawn_local(async move {
+                if let Ok(loaded) = commands::list_items_by_workspace(ws_id).await {
+                    *store.items().write() = loaded;
+                }
+                if let Ok(loaded) = commands::list_tags().await {
+                    *store.tags().write() = loaded;
+                }
+                if let Ok(loaded) = commands::get_root_tags().await {
+                    *store.root_tags().write() = loaded;
+                }
+            });
+        };
+        
+        // Initial load
+        load_items_and_tags();
+        
+        // Listen for DB ready event
         spawn_local(async move {
-            if let Ok(loaded) = commands::list_items_by_workspace(ws_id).await {
-                *store.items().write() = loaded;
-            }
-            if let Ok(loaded) = commands::list_tags().await {
-                *store.tags().write() = loaded;
-            }
-            if let Ok(loaded) = commands::get_root_tags().await {
-                *store.root_tags().write() = loaded;
-            }
+            let _ = commands::listen_safe("db-initialized", move |_| {
+                load_items_and_tags();
+            }).await;
         });
     });
     

@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 use tokio::sync::Mutex;
 use percent_encoding::percent_decode_str;
 
@@ -15,15 +15,12 @@ mod domain;
 mod repository;
 mod commands;
 
-use repository::{ItemRepository, TagRepository, WindowStateRepository, WorkspaceRepository, init_db, DbState};
+use repository::{init_db, DbState};
 
 /// Application state shared across commands
 pub struct AppState {
-    pub item_repo: Mutex<ItemRepository>,
-    pub tag_repo: Mutex<TagRepository>,
-    pub window_repo: Mutex<WindowStateRepository>,
-    pub workspace_repo: Mutex<WorkspaceRepository>,
     pub db_state: DbState,
+    pub db_path: PathBuf,
 }
 
 /// Get database path from app handle
@@ -94,28 +91,45 @@ pub fn run() {
                 "TagAll"
             ).expect("failed to init rolling logger");
             
-            // Initialize database
-            tauri::async_runtime::block_on(async move {
-                let db_path = get_db_path(&app_handle);
-                let db_state = init_db(&db_path).await.expect("Failed to init database");
+            let db_path = get_db_path(&app_handle);
+            
+            eprintln!("[{}] App setup starting", chrono::Local::now().format("%H:%M:%S%.3f"));
+            
+            // Create initial empty DbState
+            let db_state = DbState::new();
+            
+            // Manage state IMMEDIATELY with empty DbState
+            app.manage(AppState {
+                db_state: db_state.clone(),
+                db_path: db_path.clone(),
+            });
+            
+            eprintln!("[{}] State managed, app will start immediately", chrono::Local::now().format("%H:%M:%S%.3f"));
+            
+            // Initialize database asynchronously in background
+            tauri::async_runtime::spawn(async move {
+                eprintln!("[{}] Background: Starting DB initialization", chrono::Local::now().format("%H:%M:%S%.3f"));
                 
-                // Create connection for repositories
-                let conn = db_state.get_connection().await.expect("Failed to get connection");
-                let conn = Arc::new(Mutex::new(conn));
-                
-                let item_repo = ItemRepository::new(conn.clone());
-                let tag_repo = TagRepository::new(conn.clone());
-                let window_repo = WindowStateRepository::new(conn.clone());
-                let workspace_repo = WorkspaceRepository::new(conn.clone());
-                
-                // Store state
-                app_handle.manage(AppState {
-                    item_repo: Mutex::new(item_repo),
-                    tag_repo: Mutex::new(tag_repo),
-                    window_repo: Mutex::new(window_repo),
-                    workspace_repo: Mutex::new(workspace_repo),
-                    db_state,
-                });
+                match init_db(&db_path).await {
+                    Ok(initialized_state) => {
+                        eprintln!("[{}] Background: DB initialized successfully", chrono::Local::now().format("%H:%M:%S%.3f"));
+                        let _ = rolling_logger::info("Async DB init success");
+                        
+                        // Update the existing DbState with the initialized data
+                        db_state.update_from(&initialized_state).await;
+                        eprintln!("[{}] Background: DbState updated", chrono::Local::now().format("%H:%M:%S%.3f"));
+                        
+                        // Emit event to notify frontend
+                        eprintln!("[{}] Background: Emitting db-initialized event", chrono::Local::now().format("%H:%M:%S%.3f"));
+                        if let Err(e) = app_handle.emit("db-initialized", ()) {
+                            eprintln!("Failed to emit event: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[{}] Background: DB init failed: {}", chrono::Local::now().format("%H:%M:%S%.3f"), e);
+                        let _ = rolling_logger::error(&format!("Async DB init failed: {}", e));
+                    }
+                }
             });
             
             Ok(())
