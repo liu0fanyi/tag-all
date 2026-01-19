@@ -2,7 +2,7 @@
 //!
 //! Manages window position/size persistence.
 
-use libsql::Connection;
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -29,42 +29,46 @@ impl Default for WindowState {
 }
 
 pub struct WindowStateRepository {
-    conn: Arc<Mutex<Connection>>,
+    // Matches generic DbState
+    conn: Arc<Mutex<Option<Connection>>>,
 }
 
 impl WindowStateRepository {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
+    pub fn new(conn: Arc<Mutex<Option<Connection>>>) -> Self {
         Self { conn }
     }
 
     pub async fn save(&self, state: &WindowState) -> Result<(), String> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or("Database connection not initialized")?;
         
+        let now = chrono::Local::now().timestamp_millis();
         conn.execute(
-            "INSERT OR REPLACE INTO window_state (id, width, height, x, y, pinned) VALUES (1, ?, ?, ?, ?, ?)",
-            libsql::params![state.width, state.height, state.x, state.y, if state.pinned { 1 } else { 0 }],
+            "INSERT OR REPLACE INTO window_state (id, width, height, x, y, pinned, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)",
+            params![state.width, state.height, state.x, state.y, if state.pinned { 1 } else { 0 }, now],
         )
-        .await
         .map_err(|e| e.to_string())?;
         
         Ok(())
     }
 
     pub async fn load(&self) -> Result<Option<WindowState>, String> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or("Database connection not initialized")?;
         
-        let mut rows = conn
-            .query("SELECT width, height, x, y, pinned FROM window_state WHERE id = 1", ())
-            .await
+        let mut stmt = conn.prepare("SELECT width, height, x, y, pinned FROM window_state WHERE id = 1")
+            .map_err(|e| e.to_string())?;
+            
+        let mut rows = stmt.query([])
             .map_err(|e| e.to_string())?;
         
-        if let Ok(Some(row)) = rows.next().await {
+        if let Some(row) = rows.next().map_err(|e| e.to_string())? {
             Ok(Some(WindowState {
-                width: row.get::<f64>(0).unwrap_or(800.0),
-                height: row.get::<f64>(1).unwrap_or(600.0),
-                x: row.get::<f64>(2).unwrap_or(100.0),
-                y: row.get::<f64>(3).unwrap_or(100.0),
-                pinned: row.get::<i32>(4).unwrap_or(0) != 0,
+                width: row.get::<_, f64>(0).unwrap_or(800.0),
+                height: row.get::<_, f64>(1).unwrap_or(600.0),
+                x: row.get::<_, f64>(2).unwrap_or(100.0),
+                y: row.get::<_, f64>(3).unwrap_or(100.0),
+                pinned: row.get::<_, i32>(4).unwrap_or(0) != 0,
             }))
         } else {
             Ok(None)

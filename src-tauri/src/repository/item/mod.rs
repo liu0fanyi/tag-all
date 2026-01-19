@@ -16,3 +16,4 @@ pub use item_repo::ItemRepository;
 // Re-export all operation traits so they can be used by importing ItemRepository
 pub use item_hierarchy::ItemHierarchyOperations;
 pub use item_workspace::ItemWorkspaceOperations;
+pub use item_positioning::ItemPositioningOperations;

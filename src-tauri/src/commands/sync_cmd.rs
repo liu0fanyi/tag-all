@@ -2,12 +2,47 @@
 //!
 //! Tauri commands for managing cloud synchronization with Turso.
 
-use crate::repository::{SyncConfig, configure_sync as repo_configure_sync, get_sync_config as repo_get_sync_config};
+use crate::repository::{configure_sync as repo_configure_sync, get_sync_config as repo_get_sync_config, SyncConfig};
 use std::path::PathBuf;
 use tauri::Manager;
 
 // Import validate_cloud_connection from backend crate
 use tauri_sync_db_backend::validate_cloud_connection;
+
+// Import generic sync
+use tauri_sync_db_backend::sync::{sync_all, DynamicSchema};
+use reqwest;
+
+/// Helper to perform sync using generic backend
+async fn perform_sync(state: &tauri_sync_db_backend::DbState) -> Result<(), String> {
+    let config = repo_get_sync_config(&state.db_path).ok_or("Sync not configured")?;
+    
+    // 1. Load Dynamic Schema from DB
+    // We want to sync: items, tags, item_tags, tag_tags, workspaces, workspace_dirs, window_state
+    // Settings? tag-all doesn't seem to have settings table yet, or it's implicitly handled.
+    // Based on db.rs migrations:
+    let tables = vec![
+        "workspaces", 
+        "workspace_dirs", 
+        "tags", 
+        "items", 
+        "item_tags", 
+        "tag_tags", 
+        "window_state"
+    ];
+    
+    let schema = DynamicSchema::load(state, tables).await
+        .map_err(|e| format!("Failed to load schema: {}", e))?;
+        
+    // 2. HTTP Client
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true) // For local testing/emulator
+        .build()
+        .map_err(|e| e.to_string())?;
+        
+    // 3. Sync All
+    sync_all(&client, state, &schema, &config.url, &config.token).await
+}
 
 /// Get database path from app handle
 fn get_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
@@ -25,9 +60,6 @@ pub async fn configure_cloud_sync(
     token: String,
 ) -> Result<(), String> {
     use crate::repository;
-    use std::sync::Arc;
-use crate::repository::{TagRepository, ItemRepository, WorkspaceRepository};
-    use tokio::sync::Mutex;
     use std::time::Duration;
     
     eprintln!("=== Cloud Sync Configuration Start ===");
@@ -46,37 +78,37 @@ use crate::repository::{TagRepository, ItemRepository, WorkspaceRepository};
     // === STEP 1: Backup existing data ===
     eprintln!("[1/7] Backing up existing data...");
     let backup_data = {
-        match state.db_state.get_connection().await {
-            Ok(old_conn) => {
-                match repository::db::backup_local_data(&old_conn).await {
-                    Ok(backup) => {
-                        eprintln!("✓ Memory backup: {} items, {} tags, {} workspaces",
-                                  backup.items.len(), backup.tags.len(), backup.workspaces.len());
-                        
-                        // Save to JSON file as extra insurance
-                        if let Ok(json_str) = serde_json::to_string(&backup) {
-                            let _ = std::fs::write(&backup_json_path, json_str);
-                            eprintln!("✓ JSON backup saved");
-                        }
-                        
-                        Some(backup)
+        let conn_opt_guard = state.db_state.conn.lock().await;
+        if let Some(old_conn) = conn_opt_guard.as_ref() {
+            // Synchronous call - safe because it's just rusqlite on local thread buffer
+            match repository::db::backup_local_data(old_conn) {
+                Ok(backup) => {
+                    eprintln!("✓ Memory backup: {} items, {} tags, {} workspaces",
+                              backup.items.len(), backup.tags.len(), backup.workspaces.len());
+                    
+                    // Save to JSON file as extra insurance
+                    if let Ok(json_str) = serde_json::to_string(&backup) {
+                        let _ = std::fs::write(&backup_json_path, json_str);
+                        eprintln!("✓ JSON backup saved");
                     }
-                    Err(e) => {
-                        eprintln!("⚠ Backup failed: {}, continuing without backup", e);
-                        None
-                    }
+                    
+                    Some(backup)
+                }
+                Err(e) => {
+                    eprintln!("⚠ Backup failed: {}, continuing without backup", e);
+                    None
                 }
             }
-            Err(_) => {
-                eprintln!("⚠ No existing connection, skipping backup");
-                None
-            }
+        } else {
+            eprintln!("⚠ No existing connection, skipping backup");
+            None
         }
     };
     
     // === STEP 2: Close existing connections ===
     eprintln!("[2/7] Closing existing connections...");
-    state.db_state.close().await;
+    state.db_state.conn.lock().await.take(); // Manually take connection to drop it
+    
     tokio::time::sleep(Duration::from_millis(200)).await;
     eprintln!("✓ Connections closed");
     
@@ -89,15 +121,6 @@ use crate::repository::{TagRepository, ItemRepository, WorkspaceRepository};
         }
     }
 
-    // === STEP 3.5: Migrate remote schema ===
-    eprintln!("[3.5/7] Migrating remote schema...");
-    if let Err(e) = repository::db::migrate_remote_schema(url.clone(), token.clone()).await {
-        eprintln!("⚠ Remote migration warning: {}", e);
-        // We continue because maybe it's connection issue but sync might still work or schema is already good
-    } else {
-        eprintln!("✓ Remote schema migrated");
-    }
-    
     // === STEP 4: Save configuration ===
     eprintln!("[4/7] Saving sync configuration...");
     repo_configure_sync(&db_path, url.clone(), token.clone()).await?;
@@ -126,27 +149,34 @@ use crate::repository::{TagRepository, ItemRepository, WorkspaceRepository};
             // Restore data if we have backup
             if let Some(backup) = backup_data {
                 eprintln!("Migrating local data to cloud...");
-                match new_db_state.get_connection().await {
-                    Ok(new_conn) => {
-                        match repository::db::restore_data(&new_conn, backup).await {
-                            Ok(_) => eprintln!("✓ Data migrated successfully"),
-                            Err(e) => eprintln!("⚠ Data migration failed: {}", e),
-                        }
+                let conn_guard = new_db_state.conn.lock().await;
+                if let Some(new_conn) = conn_guard.as_ref() {
+                     // Synchronous call
+                     match repository::db::restore_data(new_conn, backup) {
+                        Ok(_) => eprintln!("✓ Data migrated successfully"),
+                        Err(e) => eprintln!("⚠ Data migration failed: {}", e),
                     }
-                    Err(e) => eprintln!("⚠ Failed to get connection for restore: {}", e),
+                } else {
+                    eprintln!("⚠ Failed to get connection for restore");
                 }
             }
             
             // === STEP 7: Update application state ===
             eprintln!("[7/7] Updating application state...");
             
-            // Update DbState with new cloud-synced database
-            state.db_state.update_from(&new_db_state).await;
+            // Update DbState
+            {
+                let mut app_conn = state.db_state.conn.lock().await;
+                let new_conn_opt = new_db_state.conn.lock().await.take();
+                *app_conn = new_conn_opt;
+            }
+            
             eprintln!("✓ Application state updated");
             
             // Trigger initial sync
             eprintln!("Triggering initial sync...");
-            match new_db_state.sync().await {
+            // Use local helper
+            match perform_sync(&state.db_state).await {
                 Ok(_) => {
                     eprintln!("✓ Initial sync complete");
                     
@@ -185,7 +215,10 @@ use crate::repository::{TagRepository, ItemRepository, WorkspaceRepository};
             eprintln!("Reinitializing local database...");
             match repository::init_db(&db_path).await {
                 Ok(local_state) => {
-                    // Note: State replacement via repository updates
+                    // Restore connection
+                     let mut app_conn = state.db_state.conn.lock().await;
+                     let new_conn_opt = local_state.conn.lock().await.take();
+                     *app_conn = new_conn_opt;
                     eprintln!("✓ Local database restored");
                 }
                 Err(e) => eprintln!("✗ Failed to reinit local database: {}", e),
@@ -215,7 +248,7 @@ pub async fn save_cloud_sync_config(
 ) -> Result<(), String> {
     // Validate connection before saving
     if !url.is_empty() && !token.is_empty() {
-        crate::repository::db::validate_cloud_connection(url.clone(), token.clone()).await
+        validate_cloud_connection(url.clone(), token.clone()).await
             .map_err(|e| format!("验证连接失败: {}", e))?;
     }
 
@@ -228,7 +261,7 @@ pub async fn save_cloud_sync_config(
 pub async fn sync_cloud_db(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
-    state.db_state.sync().await
+    perform_sync(&state.db_state).await
 }
 
 /// Check if cloud sync is currently enabled for this session
@@ -236,7 +269,7 @@ pub async fn sync_cloud_db(
 pub async fn is_cloud_sync_enabled(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<bool, String> {
-    Ok(state.db_state.is_cloud_sync_enabled().await)
+    Ok(state.db_state.is_cloud_sync_enabled())
 }
 
 /// Alias for save_cloud_sync_config (for compatibility with SyncSettingsForm)
@@ -265,4 +298,38 @@ pub fn get_sync_config(
     get_cloud_sync_config(app_handle)
 }
 
+#[derive(serde::Serialize)]
+pub struct AppSyncStatus {
+    last_sync_time: Option<String>,
+    sync_count: i32,
+}
 
+/// Get sync status (latest sync time across all tables)
+#[tauri::command]
+pub async fn get_sync_status(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<AppSyncStatus, String> {
+    use rusqlite::OptionalExtension;
+    
+    let conn_guard = state.db_state.conn.lock().await;
+    let conn = conn_guard.as_ref().ok_or("Database not initialized")?;
+    
+    // Get the latest sync time from any table
+    let last_sync: Option<String> = conn.query_row(
+        "SELECT MAX(last_sync_time) FROM sync_status",
+        [],
+        |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?.flatten();
+    
+    // Get total successful syncs (sum of counts)
+    let total_count: i32 = conn.query_row(
+        "SELECT COALESCE(SUM(sync_count), 0) FROM sync_status",
+        [],
+        |row| row.get(0)
+    ).unwrap_or(0);
+    
+    Ok(AppSyncStatus {
+        last_sync_time: last_sync,
+        sync_count: total_count,
+    })
+}

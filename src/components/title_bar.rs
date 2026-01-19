@@ -16,6 +16,7 @@ pub fn TitleBar(
     sync_url: ReadSignal<String>,
     sync_token: ReadSignal<String>,
     sync_status: ReadSignal<String>,
+    sync_msg: ReadSignal<String>,
     on_sync_click: Callback<()>,
     on_sync_right_click: Callback<()>,
 ) -> impl IntoView {
@@ -73,10 +74,15 @@ pub fn TitleBar(
                     class="titlebar-btn sync"
                     title=move || {
                         let has_config = !sync_url.get().is_empty() && !sync_token.get().is_empty();
+                        let msg = sync_msg.get();
                         if has_config {
-                            "左键：配置同步\n右键：立即同步"
+                            if !msg.is_empty() {
+                                format!("{}\n左键：配置同步\n右键：立即同步", msg)
+                            } else {
+                                "左键：配置同步\n右键：立即同步".to_string()
+                            }
                         } else {
-                            "左键：配置同步"
+                            "左键：配置同步".to_string()
                         }
                     }
                     on:click=move |ev| {

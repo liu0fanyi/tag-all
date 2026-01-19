@@ -88,3 +88,20 @@ pub async fn is_cloud_sync_enabled() -> bool {
     }
 }
 
+/// Sync status structure
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppSyncStatus {
+    pub last_sync_time: Option<String>,
+    pub sync_count: i32,
+}
+
+/// Get current sync status
+pub async fn get_sync_status() -> Result<AppSyncStatus, String> {
+    let promise = invoke("get_sync_status", JsValue::NULL);
+    let result = JsFuture::from(promise).await
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{:?}", e)))?;
+    
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Response error: {}", e))
+}
+

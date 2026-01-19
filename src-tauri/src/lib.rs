@@ -6,9 +6,7 @@
 //! - commands: Tauri command handlers
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use tauri::{Manager, Emitter};
-use tokio::sync::Mutex;
 use percent_encoding::percent_decode_str;
 
 mod domain;
@@ -95,10 +93,10 @@ pub fn run() {
             
             eprintln!("[{}] App setup starting", chrono::Local::now().format("%H:%M:%S%.3f"));
             
-            // Create initial empty DbState
-            let db_state = DbState::new();
+            // Create initial empty DbState (managed)
+            let db_state = DbState::new(db_path.clone());
             
-            // Manage state IMMEDIATELY with empty DbState
+            // Manage state IMMEDIATELY
             app.manage(AppState {
                 db_state: db_state.clone(),
                 db_path: db_path.clone(),
@@ -116,7 +114,14 @@ pub fn run() {
                         let _ = rolling_logger::info("Async DB init success");
                         
                         // Update the existing DbState with the initialized data
-                        db_state.update_from(&initialized_state).await;
+                        {
+                            // 1. Connection
+                            let mut conn_guard = db_state.conn.lock().await;
+                            *conn_guard = initialized_state.conn.lock().await.take();
+                            
+                            // 2. Sync Config - skipped if not available
+                        }
+                        
                         eprintln!("[{}] Background: DbState updated", chrono::Local::now().format("%H:%M:%S%.3f"));
                         
                         // Emit event to notify frontend
@@ -193,6 +198,7 @@ pub fn run() {
             commands::sync_cloud_db,
             commands::sync_database,
             commands::get_sync_config,
+            commands::get_sync_status,
             commands::is_cloud_sync_enabled,
             // Level 7: Files
             commands::list_directory,

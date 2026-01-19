@@ -2,9 +2,7 @@
 //!
 //! Handles listing files, scanning directories, and resolving file identity.
 
-use std::sync::Arc;
 use crate::repository::{TagRepository, ItemRepository};
-use tokio::sync::Mutex;
 use tauri::State;
 use std::path::{Path, PathBuf};
 use std::fs;
@@ -39,10 +37,8 @@ pub async fn list_directory(
         return Err("Directory does not exist".to_string());
     }
 
-    let conn = state.db_state.get_connection().await?;
-    let item_repo = ItemRepository::new(Arc::new(Mutex::new(conn.clone())));
-    let conn2 = state.db_state.get_connection().await?;
-    let tag_repo = TagRepository::new(Arc::new(Mutex::new(conn2)));
+    let item_repo = ItemRepository::new(state.db_state.conn.clone());
+    let tag_repo = TagRepository::new(state.db_state.conn.clone());
 
     // Use read_dir to scan directory
     let entries = fs::read_dir(dir_path).map_err(|e| e.to_string())?;
@@ -123,8 +119,7 @@ pub async fn ensure_file_item(
         return Err("File does not exist".to_string());
     }
 
-    let conn = state.db_state.get_connection().await?;
-    let item_repo = ItemRepository::new(Arc::new(Mutex::new(conn.clone())));
+    let item_repo = ItemRepository::new(state.db_state.conn.clone());
 
     // 1. Calculate Content Hash (definitive identity)
     // For directories, we can't read content, so we use quick_hash as the content hash
@@ -185,5 +180,3 @@ pub async fn ensure_file_item(
 pub async fn open_file(path: String) -> Result<(), String> {
     open::that(path).map_err(|e| e.to_string())
 }
-
-

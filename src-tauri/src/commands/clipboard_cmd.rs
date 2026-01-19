@@ -2,9 +2,8 @@
 //!
 //! Commands for handling clipboard operations like saving pasted images.
 
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use tauri::Manager;
+use crate::repository::{Repository, ItemRepository};
 
 /// Save clipboard image data to app data directory
 /// 
@@ -70,11 +69,9 @@ pub async fn clean_unused_assets(
     use std::fs;
     use std::collections::HashSet;
     use regex::Regex;
-    use crate::repository::{Repository, ItemRepository};
 
     // 1. Get all items from DB
-    let conn = state.db_state.get_connection().await?;
-    let item_repo = ItemRepository::new(Arc::new(Mutex::new(conn)));
+    let item_repo = ItemRepository::new(state.db_state.conn.clone());
     let items: Vec<crate::domain::Item> = item_repo.list().await
         .map_err(|e| format!("Failed to list items: {}", e))?;
     

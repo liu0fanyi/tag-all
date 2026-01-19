@@ -6,16 +6,19 @@
 mod tests {
     use crate::domain::{Item, ItemType};
     use crate::repository::{Repository, HierarchyRepository, ItemRepository, init_db};
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
+    use crate::repository::item::ItemHierarchyOperations;
     use std::path::PathBuf;
 
     async fn setup_test_db() -> ItemRepository {
         // Use in-memory database for tests
+        // Note: init_db implementation in db.rs handles :memory: path handling if supported by tauri-sync-db-backend
+        // If not, we might need a temporary file. 
+        // But assuming rusqlite accepts :memory:
         let db_path = PathBuf::from(":memory:");
         let db_state = init_db(&db_path).await.expect("Failed to init test DB");
-        let conn = db_state.get_connection().await.expect("Failed to get connection");
-        ItemRepository::new(Arc::new(Mutex::new(conn)))
+        
+        // Return repository using the shared connection
+        ItemRepository::new(db_state.conn.clone())
     }
 
     // ========================
@@ -26,12 +29,17 @@ mod tests {
     async fn test_create_item() {
         let repo = setup_test_db().await;
         
+        // Use default ID 0, repository handles assignment
         let item = Item::new(0, "Test item".to_string(), ItemType::Daily);
         let created = repo.create(&item).await.expect("Failed to create");
         
         assert!(created.id > 0);
         assert_eq!(created.text, "Test item");
         assert!(!created.completed);
+        
+        // Verify timestamps
+        assert!(created.created_at.is_some());
+        assert!(created.updated_at.is_some());
     }
 
     #[tokio::test]
@@ -64,12 +72,18 @@ mod tests {
         let item = Item::new(0, "Original".to_string(), ItemType::Daily);
         let mut created = repo.create(&item).await.unwrap();
         
+        // Wait to ensure updated_at changes
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        
+        let created_ts = created.updated_at.unwrap_or(0);
+
         created.text = "Updated".to_string();
         created.completed = true;
         
         let updated = repo.update(&created).await.expect("Update failed");
         assert_eq!(updated.text, "Updated");
         assert!(updated.completed);
+        assert!(updated.updated_at.unwrap_or(0) > created_ts, "Updated timestamp should increase");
     }
 
     #[tokio::test]
@@ -163,6 +177,9 @@ mod tests {
         // Verify
         let moved = repo.find_by_id(child.id).await.unwrap().unwrap();
         assert_eq!(moved.parent_id, Some(parent2.id));
+        
+        // Verify updated_at
+        assert!(moved.updated_at.is_some());
     }
 
     #[tokio::test]

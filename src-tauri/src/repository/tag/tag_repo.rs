@@ -7,7 +7,7 @@
 //! - tag_positioning: Position management
 
 use async_trait::async_trait;
-use libsql::Connection;
+use rusqlite::{Connection, params};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -16,11 +16,11 @@ use super::super::traits::Repository;
 
 /// SQLite implementation of Tag repository
 pub struct TagRepository {
-    pub(super) conn: Arc<Mutex<Connection>>,
+    pub(super) conn: Arc<Mutex<Option<Connection>>>,
 }
 
 impl TagRepository {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
+    pub fn new(conn: Arc<Mutex<Option<Connection>>>) -> Self {
         Self { conn }
     }
 }
@@ -28,13 +28,13 @@ impl TagRepository {
 #[async_trait]
 impl Repository<Tag> for TagRepository {
     async fn create(&self, entity: &Tag) -> DomainResult<Tag> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
         conn.execute(
-            "INSERT INTO tags (name, color) VALUES (?, ?)",
-            libsql::params![entity.name.clone(), entity.color.clone()],
+            "INSERT INTO tags (name, color, updated_at) VALUES (?, ?, ?)",
+            params![entity.name.clone(), entity.color.clone(), chrono::Utc::now().timestamp_millis()],
         )
-        .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         let id = conn.last_insert_rowid() as u32;
@@ -45,17 +45,16 @@ impl Repository<Tag> for TagRepository {
     }
 
     async fn find_by_id(&self, id: u32) -> DomainResult<Option<Tag>> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut rows = conn
-            .query(
-                "SELECT id, name, color FROM tags WHERE id = ?",
-                libsql::params![id],
-            )
-            .await
+        let mut stmt = conn.prepare("SELECT id, name, color, position FROM tags WHERE id = ?")
+            .map_err(|e| DomainError::Internal(e.to_string()))?;
+            
+        let mut rows = stmt.query(params![id])
             .map_err(|e| DomainError::Internal(e.to_string()))?;
 
-        if let Ok(Some(row)) = rows.next().await {
+        if let Ok(Some(row)) = rows.next() {
             Ok(Some(row_to_tag(&row)?))
         } else {
             Ok(None)
@@ -63,39 +62,41 @@ impl Repository<Tag> for TagRepository {
     }
 
     async fn list(&self) -> DomainResult<Vec<Tag>> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut rows = conn
-            .query("SELECT id, name, color FROM tags ORDER BY name", ())
-            .await
+        let mut stmt = conn.prepare("SELECT id, name, color, position FROM tags ORDER BY name")
+             .map_err(|e| DomainError::Internal(e.to_string()))?;
+             
+        let mut rows = stmt.query([])
             .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         let mut tags = Vec::new();
-        while let Ok(Some(row)) = rows.next().await {
+        while let Ok(Some(row)) = rows.next() {
             tags.push(row_to_tag(&row)?);
         }
         Ok(tags)
     }
 
     async fn update(&self, entity: &Tag) -> DomainResult<Tag> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
         conn.execute(
-            "UPDATE tags SET name = ?, color = ? WHERE id = ?",
-            libsql::params![entity.name.clone(), entity.color.clone(), entity.id],
+            "UPDATE tags SET name = ?, color = ?, updated_at = ? WHERE id = ?",
+            params![entity.name.clone(), entity.color.clone(), chrono::Utc::now().timestamp_millis(), entity.id],
         )
-        .await
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         Ok(entity.clone())
     }
 
     async fn delete(&self, id: u32) -> DomainResult<()> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
         // CASCADE will remove item_tags entries
-        conn.execute("DELETE FROM tags WHERE id = ?", libsql::params![id])
-            .await
+        conn.execute("DELETE FROM tags WHERE id = ?", params![id])
             .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         Ok(())
@@ -103,11 +104,11 @@ impl Repository<Tag> for TagRepository {
 }
 
 /// Convert a database row to Tag
-pub(super) fn row_to_tag(row: &libsql::Row) -> DomainResult<Tag> {
+pub(super) fn row_to_tag(row: &rusqlite::Row) -> DomainResult<Tag> {
     Ok(Tag {
-        id: row.get::<u32>(0).map_err(|e| DomainError::Internal(e.to_string()))?,
-        name: row.get::<String>(1).map_err(|e| DomainError::Internal(e.to_string()))?,
-        color: row.get::<Option<String>>(2).ok().flatten(),
-        position: row.get::<i32>(3).unwrap_or(0),
+        id: row.get(0).map_err(|e: rusqlite::Error| DomainError::Internal(e.to_string()))?,
+        name: row.get(1).map_err(|e: rusqlite::Error| DomainError::Internal(e.to_string()))?,
+        color: row.get::<_, Option<String>>(2).unwrap_or(None),
+        position: row.get::<_, i32>(3).unwrap_or(0),
     })
 }

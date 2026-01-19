@@ -19,4 +19,4 @@ pub use workspace_repo::WorkspaceRepository;
 pub use traits::{Repository, HierarchyRepository};
 
 // Re-export database types and functions (including shared crate functions)
-pub use db::{init_db, SyncConfig, BackupData, sync_db, DbState, configure_sync, get_sync_config};
+pub use db::{init_db, SyncConfig, BackupData, DbState, configure_sync, get_sync_config};

@@ -2,7 +2,7 @@
 //!
 //! Manages SQLite database connection and migrations.
 
-use libsql::{Builder, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -42,21 +42,32 @@ pub fn load_config(db_path: &PathBuf) -> Option<SyncConfig> {
 
 /// Initialize database using shared sync crate
 pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
-    // Use shared crate's init_db with tag-all specific migrations
-    tauri_sync_db_backend::init_db(db_path, |conn| {
-        Box::pin(async {
-            run_migrations(conn).await
-        })
-    }).await
+    // 1. Initialize DB using shared crate (creates file, sets WAL mode)
+    let state = tauri_sync_db_backend::init_db(db_path).await?;
+    
+    // 2. Run application-specific migrations
+    {
+        let conn_guard = state.conn.lock().await;
+        let conn = conn_guard.as_ref().ok_or("Database connection initialization failed")?;
+        run_migrations(conn)?;
+    }
+    
+    Ok(state)
 }
 
 
 /// Check if a column exists in a table
-async fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
+fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
     let query = format!("PRAGMA table_info({})", table);
-    if let Ok(mut rows) = conn.query(&query, ()).await {
-        while let Ok(Some(row)) = rows.next().await {
-            if let Ok(name) = row.get::<String>(1) {
+    let mut stmt = match conn.prepare(&query) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1)).ok();
+    if let Some(rows) = rows {
+        for name_result in rows {
+            if let Ok(name) = name_result {
                 if name == column {
                     return true;
                 }
@@ -67,7 +78,7 @@ async fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
 }
 
 /// Run database migrations
-async fn run_migrations(conn: &Connection) -> Result<(), String> {
+fn run_migrations(conn: &Connection) -> Result<(), String> {
     // Items table - create if not exists
     conn.execute(
         "CREATE TABLE IF NOT EXISTS items (
@@ -81,78 +92,66 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
         )",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
 
     // Level 2 migrations: Add hierarchy columns if they don't exist
-    if !column_exists(conn, "items", "parent_id").await {
+    if !column_exists(conn, "items", "parent_id") {
         conn.execute("ALTER TABLE items ADD COLUMN parent_id INTEGER", ())
-            .await
             .map_err(|e| format!("Failed to add parent_id: {}", e))?;
     }
 
-    if !column_exists(conn, "items", "position").await {
+    if !column_exists(conn, "items", "position") {
         conn.execute("ALTER TABLE items ADD COLUMN position INTEGER NOT NULL DEFAULT 0", ())
-            .await
             .map_err(|e| format!("Failed to add position: {}", e))?;
     }
 
-    if !column_exists(conn, "items", "collapsed").await {
+    if !column_exists(conn, "items", "collapsed") {
         conn.execute("ALTER TABLE items ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0", ())
-            .await
             .map_err(|e| format!("Failed to add collapsed: {}", e))?;
     }
     
     // Level 6: Add Web Bookmark fields (url, summary, created_at, updated_at)
-    if !column_exists(conn, "items", "url").await {
+    if !column_exists(conn, "items", "url") {
         conn.execute("ALTER TABLE items ADD COLUMN url TEXT", ())
-            .await
             .map_err(|e| format!("Failed to add url: {}", e))?;
     }
     
-    if !column_exists(conn, "items", "summary").await {
+    if !column_exists(conn, "items", "summary") {
         conn.execute("ALTER TABLE items ADD COLUMN summary TEXT", ())
-            .await
             .map_err(|e| format!("Failed to add summary: {}", e))?;
     }
     
-    if !column_exists(conn, "items", "created_at").await {
+    if !column_exists(conn, "items", "created_at") {
         conn.execute("ALTER TABLE items ADD COLUMN created_at INTEGER DEFAULT 0", ())
-            .await
             .map_err(|e| format!("Failed to add created_at: {}", e))?;
     }
     
-    if !column_exists(conn, "items", "updated_at").await {
+    if !column_exists(conn, "items", "updated_at") {
         conn.execute("ALTER TABLE items ADD COLUMN updated_at INTEGER DEFAULT 0", ())
-            .await
             .map_err(|e| format!("Failed to add updated_at: {}", e))?;
     }
 
     // Level 7: File Management fields (content_hash, quick_hash, last_known_path, is_dir)
-    if !column_exists(conn, "items", "content_hash").await {
+    if !column_exists(conn, "items", "content_hash") {
         conn.execute("ALTER TABLE items ADD COLUMN content_hash TEXT", ())
-            .await
             .map_err(|e| format!("Failed to add content_hash: {}", e))?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_content_hash ON items(content_hash)", ()).await.map_err(|e| e.to_string())?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_content_hash ON items(content_hash)", ()).map_err(|e| e.to_string())?;
     }
 
-    if !column_exists(conn, "items", "quick_hash").await {
+    if !column_exists(conn, "items", "quick_hash") {
         conn.execute("ALTER TABLE items ADD COLUMN quick_hash TEXT", ())
-            .await
             .map_err(|e| format!("Failed to add quick_hash: {}", e))?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_quick_hash ON items(quick_hash)", ()).await.map_err(|e| e.to_string())?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_quick_hash ON items(quick_hash)", ()).map_err(|e| e.to_string())?;
     }
 
-    if !column_exists(conn, "items", "last_known_path").await {
+    if !column_exists(conn, "items", "last_known_path") {
         conn.execute("ALTER TABLE items ADD COLUMN last_known_path TEXT", ())
-            .await
             .map_err(|e| format!("Failed to add last_known_path: {}", e))?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_path ON items(last_known_path)", ()).await.map_err(|e| e.to_string())?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_path ON items(last_known_path)", ()).map_err(|e| e.to_string())?;
     }
 
-    if !column_exists(conn, "items", "is_dir").await {
+    if !column_exists(conn, "items", "is_dir") {
         conn.execute("ALTER TABLE items ADD COLUMN is_dir INTEGER DEFAULT 0", ())
-            .await
             .map_err(|e| format!("Failed to add is_dir: {}", e))?;
     }
 
@@ -161,7 +160,6 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
         "CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id)",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
 
     // Level 3: Tags table (with position for root tag ordering)
@@ -170,29 +168,40 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             color TEXT,
-            position INTEGER NOT NULL DEFAULT 0
+            position INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER DEFAULT 0
         )",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
     
     // Add position column if missing (migration)
-    let _ = conn.execute("ALTER TABLE tags ADD COLUMN position INTEGER DEFAULT 0", ()).await;
+    let _ = conn.execute("ALTER TABLE tags ADD COLUMN position INTEGER DEFAULT 0", ());
+
+    // Add updated_at column if missing (migration)
+    if !column_exists(conn, "tags", "updated_at") {
+        conn.execute("ALTER TABLE tags ADD COLUMN updated_at INTEGER DEFAULT 0", ())
+            .map_err(|e| format!("Failed to add updated_at to tags: {}", e))?;
+    }
 
     // Level 3: Item-Tag many-to-many relationship
     conn.execute(
         "CREATE TABLE IF NOT EXISTS item_tags (
             item_id INTEGER NOT NULL,
             tag_id INTEGER NOT NULL,
+            updated_at INTEGER,
             PRIMARY KEY (item_id, tag_id),
             FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE,
             FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
         )",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
+
+    // Add updated_at if missing
+    if !column_exists(conn, "item_tags", "updated_at") {
+        conn.execute("ALTER TABLE item_tags ADD COLUMN updated_at INTEGER DEFAULT 0", ()).map_err(|e| e.to_string())?;
+    }
 
     // Level 3: Tag-Tag multi-parent relationship (tag can have multiple parent tags)
     conn.execute(
@@ -200,14 +209,19 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             child_tag_id INTEGER NOT NULL,
             parent_tag_id INTEGER NOT NULL,
             position INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER,
             PRIMARY KEY (child_tag_id, parent_tag_id),
             FOREIGN KEY(child_tag_id) REFERENCES tags(id) ON DELETE CASCADE,
             FOREIGN KEY(parent_tag_id) REFERENCES tags(id) ON DELETE CASCADE
         )",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
+
+    // Add updated_at if missing
+    if !column_exists(conn, "tag_tags", "updated_at") {
+        conn.execute("ALTER TABLE tag_tags ADD COLUMN updated_at INTEGER DEFAULT 0", ()).map_err(|e| e.to_string())?;
+    }
 
     // Level 4: Window state persistence
     conn.execute(
@@ -217,23 +231,35 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             height REAL NOT NULL DEFAULT 600,
             x REAL NOT NULL DEFAULT 100,
             y REAL NOT NULL DEFAULT 100,
-            pinned INTEGER NOT NULL DEFAULT 0
+            pinned INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER DEFAULT 0
         )",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
+    
+    // Add updated_at to window_state if missing
+    if !column_exists(conn, "window_state", "updated_at") {
+        conn.execute("ALTER TABLE window_state ADD COLUMN updated_at INTEGER DEFAULT 0", ())
+            .map_err(|e| format!("Failed to add updated_at to window_state: {}", e))?;
+    }
 
     // Level 5: Workspaces table
     conn.execute(
         "CREATE TABLE IF NOT EXISTS workspaces (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE
+            name TEXT NOT NULL UNIQUE,
+            updated_at INTEGER DEFAULT 0
         )",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
+
+    // Add updated_at to workspaces if missing
+    if !column_exists(conn, "workspaces", "updated_at") {
+        conn.execute("ALTER TABLE workspaces ADD COLUMN updated_at INTEGER DEFAULT 0", ())
+            .map_err(|e| format!("Failed to add updated_at to workspaces: {}", e))?;
+    }
 
     // Level 7: Workspace Directories table
     conn.execute(
@@ -242,24 +268,28 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
             workspace_id INTEGER NOT NULL,
             path TEXT NOT NULL,
             collapsed INTEGER DEFAULT 1,
+            updated_at INTEGER DEFAULT 0,
             FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
         )",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
 
     // Add collapsed column if missing
-    if !column_exists(conn, "workspace_dirs", "collapsed").await {
+    if !column_exists(conn, "workspace_dirs", "collapsed") {
         conn.execute("ALTER TABLE workspace_dirs ADD COLUMN collapsed INTEGER DEFAULT 1", ())
-            .await
             .map_err(|e| format!("Failed to add collapsed to workspace_dirs: {}", e))?;
     }
 
+    // Add updated_at to workspace_dirs if missing
+    if !column_exists(conn, "workspace_dirs", "updated_at") {
+        conn.execute("ALTER TABLE workspace_dirs ADD COLUMN updated_at INTEGER DEFAULT 0", ())
+            .map_err(|e| format!("Failed to add updated_at to workspace_dirs: {}", e))?;
+    }
+
     // Add workspace_id column to items if missing
-    if !column_exists(conn, "items", "workspace_id").await {
+    if !column_exists(conn, "items", "workspace_id") {
         conn.execute("ALTER TABLE items ADD COLUMN workspace_id INTEGER DEFAULT 1", ())
-            .await
             .map_err(|e| format!("Failed to add workspace_id: {}", e))?;
     }
 
@@ -268,28 +298,24 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
         "INSERT OR IGNORE INTO workspaces (id, name) VALUES (1, 'todos')",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
     
     conn.execute(
         "INSERT OR IGNORE INTO workspaces (id, name) VALUES (2, 'files')",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
     
     conn.execute(
         "INSERT OR IGNORE INTO workspaces (id, name) VALUES (3, 'others')",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
     
     conn.execute(
         "INSERT OR IGNORE INTO workspaces (id, name) VALUES (4, 'web-bookmarks')",
         (),
     )
-    .await
     .map_err(|e| e.to_string())?;
 
     // Migrate existing items without workspace_id to default workspace
@@ -297,7 +323,18 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
         "UPDATE items SET workspace_id = 1 WHERE workspace_id IS NULL",
         (),
     )
-    .await
+    .map_err(|e| e.to_string())?;
+
+    // Level 8: Sync Status table (required by generic sync backend)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sync_status (
+            table_name TEXT PRIMARY KEY,
+            last_sync_time TEXT,
+            last_sync_direction TEXT,
+            sync_count INTEGER
+        )",
+        (),
+    )
     .map_err(|e| e.to_string())?;
 
     Ok(())
@@ -309,13 +346,13 @@ async fn run_migrations(conn: &Connection) -> Result<(), String> {
 
 
 /// Backup all data from current database
-pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> {
+pub fn backup_local_data(conn: &Connection) -> Result<BackupData, String> {
     // Backup items
     // Explicitly select columns to ensure order and completeness
-    let mut items_stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items").await.map_err(|e| e.to_string())?;
-    let mut items_rows = items_stmt.query(()).await.map_err(|e| e.to_string())?;
+    let mut items_stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items").map_err(|e| e.to_string())?;
+    let mut items_rows = items_stmt.query([]).map_err(|e| e.to_string())?;
     let mut items = Vec::new();
-    while let Ok(Some(row)) = items_rows.next().await {
+    while let Ok(Some(row)) = items_rows.next() {
         let id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let text: String = row.get(1).map_err(|e| e.to_string())?;
         let completed: i64 = row.get(2).map_err(|e| e.to_string())?;
@@ -334,7 +371,7 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
         let content_hash: Option<String> = row.get(15).ok();
         let quick_hash: Option<String> = row.get(16).ok();
         let last_known_path: Option<String> = row.get(17).ok();
-        let is_dir: i64 = row.get(18).unwrap_or(0);
+        let is_dir: i64 = row.get::<_, i64>(18).unwrap_or(0);
         
         items.push(serde_json::json!({
             "id": id,
@@ -360,10 +397,10 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
     }
     
     // Backup tags
-    let mut tags_stmt = conn.prepare("SELECT id, name, color, position FROM tags").await.map_err(|e| e.to_string())?;
-    let mut tags_rows = tags_stmt.query(()).await.map_err(|e| e.to_string())?;
+    let mut tags_stmt = conn.prepare("SELECT id, name, color, position FROM tags").map_err(|e| e.to_string())?;
+    let mut tags_rows = tags_stmt.query([]).map_err(|e| e.to_string())?;
     let mut tags = Vec::new();
-    while let Ok(Some(row)) = tags_rows.next().await {
+    while let Ok(Some(row)) = tags_rows.next() {
         let id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let name: String = row.get(1).map_err(|e| e.to_string())?;
         let color: Option<String> = row.get(2).ok();
@@ -378,24 +415,26 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
     }
     
     // Backup workspaces
-    let mut ws_stmt = conn.prepare("SELECT id, name FROM workspaces").await.map_err(|e| e.to_string())?;
-    let mut ws_rows = ws_stmt.query(()).await.map_err(|e| e.to_string())?;
+    let mut ws_stmt = conn.prepare("SELECT id, name, updated_at FROM workspaces").map_err(|e| e.to_string())?;
+    let mut ws_rows = ws_stmt.query([]).map_err(|e| e.to_string())?;
     let mut workspaces = Vec::new();
-    while let Ok(Some(row)) = ws_rows.next().await {
+    while let Ok(Some(row)) = ws_rows.next() {
         let id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let name: String = row.get(1).map_err(|e| e.to_string())?;
+        let updated_at: Option<i64> = row.get(2).ok();
         
         workspaces.push(serde_json::json!({
             "id": id,
-            "name": name
+            "name": name,
+            "updated_at": updated_at
         }));
     }
 
     // Backup item_tags
-    let mut item_tags_stmt = conn.prepare("SELECT item_id, tag_id FROM item_tags").await.map_err(|e| e.to_string())?;
-    let mut item_tags_rows = item_tags_stmt.query(()).await.map_err(|e| e.to_string())?;
+    let mut item_tags_stmt = conn.prepare("SELECT item_id, tag_id FROM item_tags").map_err(|e| e.to_string())?;
+    let mut item_tags_rows = item_tags_stmt.query([]).map_err(|e| e.to_string())?;
     let mut item_tags = Vec::new();
-    while let Ok(Some(row)) = item_tags_rows.next().await {
+    while let Ok(Some(row)) = item_tags_rows.next() {
         let item_id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let tag_id: i64 = row.get(1).map_err(|e| e.to_string())?;
         
@@ -406,10 +445,10 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
     }
 
     // Backup tag_tags
-    let mut tag_tags_stmt = conn.prepare("SELECT child_tag_id, parent_tag_id, position FROM tag_tags").await.map_err(|e| e.to_string())?;
-    let mut tag_tags_rows = tag_tags_stmt.query(()).await.map_err(|e| e.to_string())?;
+    let mut tag_tags_stmt = conn.prepare("SELECT child_tag_id, parent_tag_id, position FROM tag_tags").map_err(|e| e.to_string())?;
+    let mut tag_tags_rows = tag_tags_stmt.query([]).map_err(|e| e.to_string())?;
     let mut tag_tags = Vec::new();
-    while let Ok(Some(row)) = tag_tags_rows.next().await {
+    while let Ok(Some(row)) = tag_tags_rows.next() {
         let child_tag_id: i64 = row.get(0).map_err(|e| e.to_string())?;
         let parent_tag_id: i64 = row.get(1).map_err(|e| e.to_string())?;
         let position: i64 = row.get(2).map_err(|e| e.to_string())?;
@@ -428,7 +467,7 @@ pub async fn backup_local_data(conn: &Connection) -> Result<BackupData, String> 
 }
 
 /// Restore data to database
-pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), String> {
+pub fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), String> {
     eprintln!("Restoring data: {} items, {} tags, {} workspaces, {} item_tags, {} tag_tags",
               backup.items.len(), backup.tags.len(), backup.workspaces.len(), backup.item_tags.len(), backup.tag_tags.len());
     
@@ -436,10 +475,11 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
     for ws in backup.workspaces {
         let id = ws["id"].as_i64().unwrap();
         let name = ws["name"].as_str().unwrap();
+        let updated_at = ws["updated_at"].as_i64().unwrap_or(0);
         conn.execute(
-            "INSERT OR REPLACE INTO workspaces (id, name) VALUES (?, ?)",
-            libsql::params![id, name]
-        ).await.map_err(|e| e.to_string())?;
+            "INSERT OR REPLACE INTO workspaces (id, name, updated_at) VALUES (?, ?, ?)",
+            params![id, name, updated_at]
+        ).map_err(|e| e.to_string())?;
     }
     
     // Restore tags
@@ -449,12 +489,10 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
         let color = tag["color"].as_str(); // Option<String>
         let position = tag["position"].as_i64().unwrap_or(0);
         
-        // Handle explicit null for color if needed, params! handles Option nicely usually but let's be explicit if needed
-        // libsql params! macro should handle Option<&str> correctly as NULL if None
         conn.execute(
             "INSERT OR REPLACE INTO tags (id, name, color, position) VALUES (?, ?, ?, ?)",
-            libsql::params![id, name, color, position]
-        ).await.map_err(|e| e.to_string())?;
+            params![id, name, color, position]
+        ).map_err(|e| e.to_string())?;
     }
     
     // Restore items
@@ -482,8 +520,8 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
         conn.execute(
             "INSERT OR REPLACE INTO items (id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir) 
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            libsql::params![id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir]
-        ).await.map_err(|e| e.to_string())?;
+            params![id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, workspace_id, url, summary, created_at, updated_at, content_hash, quick_hash, last_known_path, is_dir]
+        ).map_err(|e| e.to_string())?;
     }
 
     // Restore item_tags
@@ -493,8 +531,8 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
         
         conn.execute(
             "INSERT OR REPLACE INTO item_tags (item_id, tag_id) VALUES (?, ?)",
-            libsql::params![item_id, tag_id]
-        ).await.map_err(|e| e.to_string())?;
+            params![item_id, tag_id]
+        ).map_err(|e| e.to_string())?;
     }
 
     // Restore tag_tags
@@ -505,39 +543,10 @@ pub async fn restore_data(conn: &Connection, backup: BackupData) -> Result<(), S
         
         conn.execute(
             "INSERT OR REPLACE INTO tag_tags (child_tag_id, parent_tag_id, position) VALUES (?, ?, ?)",
-            libsql::params![child_tag_id, parent_tag_id, position]
-        ).await.map_err(|e| e.to_string())?;
+            params![child_tag_id, parent_tag_id, position]
+        ).map_err(|e| e.to_string())?;
     }
     
     eprintln!("Data restore complete");
     Ok(())
 }
-
-// ============================================================================
-// Cloud Sync Management
-// ============================================================================
-
-/// Apply migrations directly to the remote database
-pub async fn migrate_remote_schema(url: String, token: String) -> Result<(), String> {
-    eprintln!("Connecting to remote DB for migration: {}", url);
-    let db = Builder::new_remote(url, token)
-        .build()
-        .await
-        .map_err(|e| format!("Remote build failed: {}", e))?;
-        
-    let conn = db.connect().map_err(|e| format!("Remote connect failed: {}", e))?;
-    
-    // Remote connections usually don't support foreign_keys pragma the same way or it might be default? 
-    // But safely we can try to run migrations.
-    run_migrations(&conn).await?;
-    
-    eprintln!("Remote schema migration complete");
-    Ok(())
-}
-
-/// Trigger manual sync (wrapper around DbState public API)
-pub async fn sync_db(state: &DbState) -> Result<(), String> {
-    // Use DbState's public sync method
-    state.sync().await
-}
-

@@ -3,6 +3,7 @@
 //! Operations for managing item positions within their parent hierarchy.
 
 use async_trait::async_trait;
+use rusqlite::params;
 
 use crate::domain::{DomainError, DomainResult};
 
@@ -19,7 +20,8 @@ pub trait ItemPositioningOperations {
 #[async_trait]
 impl ItemPositioningOperations for super::item_repo::ItemRepository {
     async fn get_next_position(&self, parent_id: Option<u32>) -> DomainResult<i32> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
         let query = match parent_id {
             Some(pid) => format!(
@@ -28,52 +30,49 @@ impl ItemPositioningOperations for super::item_repo::ItemRepository {
             None => "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id IS NULL".to_string(),
         };
         
-        let mut rows = conn.query(&query, ())
-            .await
+        let mut stmt = conn.prepare(&query)
+             .map_err(|e| DomainError::Internal(e.to_string()))?;
+             
+        let mut rows = stmt.query([])
             .map_err(|e| DomainError::Internal(e.to_string()))?;
         
-        if let Ok(Some(row)) = rows.next().await {
-            Ok(row.get::<i32>(0).unwrap_or(0))
+        if let Ok(Some(row)) = rows.next() {
+            Ok(row.get::<_, i32>(0).unwrap_or(0))
         } else {
             Ok(0)
         }
     }
 
     async fn reindex_items(&self, parent_id: Option<u32>) -> DomainResult<()> {
-        let conn = self.conn.lock().await;
+        let guard = self.conn.lock().await;
+        let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
         // Get all items under this parent ordered by current position
-        let mut rows = match parent_id {
-            Some(pid) => conn
-                .query(
-                    "SELECT id FROM items WHERE parent_id = ? ORDER BY position, id",
-                    libsql::params![pid],
-                )
-                .await
-                .map_err(|e| DomainError::Internal(e.to_string()))?,
-            None => conn
-                .query(
-                    "SELECT id FROM items WHERE parent_id IS NULL ORDER BY position, id",
-                    (),
-                )
-                .await
-                .map_err(|e| DomainError::Internal(e.to_string()))?,
-        };
-        
         let mut ids = Vec::new();
-        while let Ok(Some(row)) = rows.next().await {
-            let id: u32 = row.get(0).map_err(|e| DomainError::Internal(e.to_string()))?;
-            ids.push(id);
+        
+        {
+            let mut stmt = match parent_id {
+                Some(pid) => conn.prepare("SELECT id FROM items WHERE parent_id = ? ORDER BY position, id").map_err(|e| DomainError::Internal(e.to_string()))?,
+                None => conn.prepare("SELECT id FROM items WHERE parent_id IS NULL ORDER BY position, id").map_err(|e| DomainError::Internal(e.to_string()))?,
+            };
+            
+            let mut rows = match parent_id {
+                Some(pid) => stmt.query(params![pid]).map_err(|e| DomainError::Internal(e.to_string()))?,
+                None => stmt.query([]).map_err(|e| DomainError::Internal(e.to_string()))?,
+            };
+            
+            while let Ok(Some(row)) = rows.next() {
+                let id: u32 = row.get(0).map_err(|e| DomainError::Internal(e.to_string()))?;
+                ids.push(id);
+            }
         }
-        drop(rows);
         
         // Update each item with sequential position
         for (new_pos, id) in ids.iter().enumerate() {
             conn.execute(
-                "UPDATE items SET position = ? WHERE id = ?",
-                libsql::params![new_pos as i32, *id],
+                "UPDATE items SET position = ?, updated_at = ? WHERE id = ?",
+                params![new_pos as i32, chrono::Utc::now().timestamp_millis(), *id],
             )
-            .await
             .map_err(|e| DomainError::Internal(e.to_string()))?;
         }
         
