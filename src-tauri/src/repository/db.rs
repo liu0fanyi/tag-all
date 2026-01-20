@@ -49,7 +49,24 @@ pub async fn init_db(db_path: &PathBuf) -> Result<DbState, String> {
     {
         let conn_guard = state.conn.lock().await;
         let conn = conn_guard.as_ref().ok_or("Database connection initialization failed")?;
-        run_migrations(conn)?;
+        
+        if let Err(e) = run_migrations(conn) {
+            let err_msg = e.to_string();
+            eprintln!("Migration failed: {}", err_msg);
+            
+            // Detailed diagnostics
+            let metadata = std::fs::metadata(db_path).map_err(|e| e.to_string())?;
+            eprintln!("DB File size (at migration failure): {} bytes", metadata.len());
+            
+            if metadata.len() > 0 {
+                 let integrity: String = conn.query_row("PRAGMA integrity_check", [], |row| row.get(0))
+                    .unwrap_or_else(|e| format!("Could not run integrity check: {}", e));
+                 
+                 return Err(format!("DB Migration failed: {}. Integrity check: {}. File size: {}", err_msg, integrity, metadata.len()));
+            } else {
+                 return Err(format!("DB Migration failed: {}. File is empty.", err_msg));
+            }
+        }
     }
     
     Ok(state)
