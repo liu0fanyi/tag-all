@@ -81,6 +81,16 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            // Single instance check - must be first!
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {
+                // Focus the existing window when a new instance tries to start
+                #[cfg(desktop)]
+                if let Some(window) = _app.get_webview_window("main") {
+                    let _ = window.set_focus();
+                }
+            }))?;
+
             let app_handle = app.handle().clone();
 
             // Initialize logging
