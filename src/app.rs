@@ -143,6 +143,7 @@ pub fn App() -> impl IntoView {
                         match commands::sync_cloud_db().await {
                             Ok(_) => {
                                 set_sync_status.set("success".to_string());
+                                set_reload_trigger.update(|n| *n += 1);
                                 // Update status msg with time
                                 if let Ok(status) = commands::get_sync_status().await {
                                      if let Some(time) = status.last_sync_time {
