@@ -26,7 +26,7 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE workspace_id = ? ORDER BY parent_id NULLS FIRST, position ASC")
+        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY parent_id NULLS FIRST, position ASC")
              .map_err(|e| DomainError::Internal(e.to_string()))?;
              
         let mut rows = stmt.query(params![workspace_id])
@@ -48,9 +48,9 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
             if entity.position == 0 {
                 let query = match entity.parent_id {
                     Some(pid) => format!(
-                        "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id = {} AND workspace_id = {}", pid, workspace_id
+                        "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id = {} AND workspace_id = {} AND deleted_at IS NULL", pid, workspace_id
                     ),
-                    None => format!("SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id IS NULL AND workspace_id = {}", workspace_id),
+                    None => format!("SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id IS NULL AND workspace_id = {} AND deleted_at IS NULL", workspace_id),
                 };
                 
                 let mut stmt = conn.prepare(&query)
@@ -116,7 +116,7 @@ impl ItemWorkspaceOperations for super::item_repo::ItemRepository {
         
         // Reset completed flag to false for all completed items in the workspace
         conn.execute(
-            "UPDATE items SET completed = 0, updated_at = ? WHERE workspace_id = ? AND completed = 1",
+            "UPDATE items SET completed = 0, updated_at = ? WHERE workspace_id = ? AND completed = 1 AND deleted_at IS NULL",
             params![chrono::Utc::now().timestamp_millis(), workspace_id],
         )
         .map_err(|e| DomainError::Internal(e.to_string()))?;

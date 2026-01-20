@@ -26,7 +26,7 @@ impl WorkspaceRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, name FROM workspaces ORDER BY id")
+        let mut stmt = conn.prepare("SELECT id, name FROM workspaces WHERE deleted_at IS NULL ORDER BY id")
             .map_err(|e| DomainError::Internal(e.to_string()))?;
             
         let mut rows = stmt.query([])
@@ -66,17 +66,19 @@ impl WorkspaceRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        // Delete all items in this workspace first
+        let now = chrono::Local::now().timestamp_millis();
+        
+        // Soft delete all items in this workspace
         conn.execute(
-            "DELETE FROM items WHERE workspace_id = ?",
-            params![id],
+            "UPDATE items SET deleted_at = ?, updated_at = ? WHERE workspace_id = ? AND deleted_at IS NULL",
+            params![now, now, id],
         )
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
-        // Delete the workspace
+        // Soft delete the workspace
         conn.execute(
-            "DELETE FROM workspaces WHERE id = ?",
-            params![id],
+            "UPDATE workspaces SET deleted_at = ?, updated_at = ? WHERE id = ?",
+            params![now, now, id],
         )
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 
@@ -112,7 +114,7 @@ impl WorkspaceRepository {
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
 
         // Updated query to include collapsed
-        let mut stmt = conn.prepare("SELECT id, workspace_id, path, collapsed FROM workspace_dirs WHERE workspace_id = ?")
+        let mut stmt = conn.prepare("SELECT id, workspace_id, path, collapsed FROM workspace_dirs WHERE workspace_id = ? AND deleted_at IS NULL")
             .map_err(|e| DomainError::Internal(e.to_string()))?;
             
         let mut rows = stmt.query(params![workspace_id])
@@ -176,9 +178,12 @@ impl WorkspaceRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
+        let now = chrono::Local::now().timestamp_millis();
+        
+        // Soft delete
         conn.execute(
-            "DELETE FROM workspace_dirs WHERE id = ?",
-            params![id],
+            "UPDATE workspace_dirs SET deleted_at = ?, updated_at = ? WHERE id = ?",
+            params![now, now, id],
         )
         .map_err(|e| DomainError::Internal(e.to_string()))?;
 

@@ -29,7 +29,7 @@ impl ItemRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE last_known_path = ?")
+        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE last_known_path = ? AND deleted_at IS NULL")
             .map_err(|e| DomainError::Internal(e.to_string()))?;
             
         let mut rows = stmt.query(params![path])
@@ -46,7 +46,7 @@ impl ItemRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE quick_hash = ? AND is_dir = ?")
+        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE quick_hash = ? AND is_dir = ? AND deleted_at IS NULL")
              .map_err(|e| DomainError::Internal(e.to_string()))?;
              
         let mut rows = stmt.query(params![quick_hash, if is_dir { 1 } else { 0 }])
@@ -63,7 +63,7 @@ impl ItemRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE content_hash = ?")
+        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE content_hash = ? AND deleted_at IS NULL")
              .map_err(|e| DomainError::Internal(e.to_string()))?;
              
         let mut rows = stmt.query(params![content_hash])
@@ -89,7 +89,7 @@ impl Repository<Item> for ItemRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE id = ?")
+        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE id = ? AND deleted_at IS NULL")
             .map_err(|e| DomainError::Internal(e.to_string()))?;
             
         let mut rows = stmt.query(params![id])
@@ -106,7 +106,7 @@ impl Repository<Item> for ItemRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items ORDER BY parent_id NULLS FIRST, position ASC")
+        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE deleted_at IS NULL ORDER BY parent_id NULLS FIRST, position ASC")
              .map_err(|e| DomainError::Internal(e.to_string()))?;
              
         let mut rows = stmt.query([])
@@ -167,10 +167,12 @@ impl Repository<Item> for ItemRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        // Manual cascade: delete all descendants first
+        let now = chrono::Utc::now().timestamp_millis();
+        
+        // Soft delete: set deleted_at for all descendants first
         // Using recursive CTE to get all descendant IDs
         conn.execute(
-            "DELETE FROM items WHERE id IN (
+            "UPDATE items SET deleted_at = ?, updated_at = ? WHERE id IN (
                 WITH RECURSIVE descendants AS (
                     SELECT id FROM items WHERE parent_id = ?
                     UNION ALL
@@ -179,13 +181,16 @@ impl Repository<Item> for ItemRepository {
                 )
                 SELECT id FROM descendants
             )",
-            params![id],
+            params![now, now, id],
         )
         .map_err(|e| DomainError::Internal(e.to_string()))?;
         
-        // Delete the item itself
-        conn.execute("DELETE FROM items WHERE id = ?", params![id])
-            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        // Soft delete the item itself
+        conn.execute(
+            "UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?",
+            params![now, now, id],
+        )
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         Ok(())
     }

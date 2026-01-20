@@ -48,7 +48,7 @@ impl Repository<Tag> for TagRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, name, color, position FROM tags WHERE id = ?")
+        let mut stmt = conn.prepare("SELECT id, name, color, position FROM tags WHERE id = ? AND deleted_at IS NULL")
             .map_err(|e| DomainError::Internal(e.to_string()))?;
             
         let mut rows = stmt.query(params![id])
@@ -65,7 +65,7 @@ impl Repository<Tag> for TagRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        let mut stmt = conn.prepare("SELECT id, name, color, position FROM tags ORDER BY name")
+        let mut stmt = conn.prepare("SELECT id, name, color, position FROM tags WHERE deleted_at IS NULL ORDER BY name")
              .map_err(|e| DomainError::Internal(e.to_string()))?;
              
         let mut rows = stmt.query([])
@@ -95,9 +95,14 @@ impl Repository<Tag> for TagRepository {
         let guard = self.conn.lock().await;
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
-        // CASCADE will remove item_tags entries
-        conn.execute("DELETE FROM tags WHERE id = ?", params![id])
-            .map_err(|e| DomainError::Internal(e.to_string()))?;
+        let now = chrono::Utc::now().timestamp_millis();
+        
+        // Soft delete: set deleted_at instead of removing
+        conn.execute(
+            "UPDATE tags SET deleted_at = ?, updated_at = ? WHERE id = ?",
+            params![now, now, id],
+        )
+        .map_err(|e| DomainError::Internal(e.to_string()))?;
 
         Ok(())
     }

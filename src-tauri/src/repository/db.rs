@@ -148,6 +148,12 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Failed to add updated_at: {}", e))?;
     }
 
+    // Level 9: Soft delete support
+    if !column_exists(conn, "items", "deleted_at") {
+        conn.execute("ALTER TABLE items ADD COLUMN deleted_at INTEGER DEFAULT NULL", ())
+            .map_err(|e| format!("Failed to add deleted_at: {}", e))?;
+    }
+
     // Level 7: File Management fields (content_hash, quick_hash, last_known_path, is_dir)
     if !column_exists(conn, "items", "content_hash") {
         conn.execute("ALTER TABLE items ADD COLUMN content_hash TEXT", ())
@@ -201,6 +207,16 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Failed to add updated_at to tags: {}", e))?;
     }
 
+    // Add created_at and deleted_at for sync support
+    if !column_exists(conn, "tags", "created_at") {
+        conn.execute("ALTER TABLE tags ADD COLUMN created_at INTEGER DEFAULT 0", ())
+            .map_err(|e| format!("Failed to add created_at to tags: {}", e))?;
+    }
+    if !column_exists(conn, "tags", "deleted_at") {
+        conn.execute("ALTER TABLE tags ADD COLUMN deleted_at INTEGER DEFAULT NULL", ())
+            .map_err(|e| format!("Failed to add deleted_at to tags: {}", e))?;
+    }
+
     // Level 3: Item-Tag many-to-many relationship
     conn.execute(
         "CREATE TABLE IF NOT EXISTS item_tags (
@@ -218,6 +234,13 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
     // Add updated_at if missing
     if !column_exists(conn, "item_tags", "updated_at") {
         conn.execute("ALTER TABLE item_tags ADD COLUMN updated_at INTEGER DEFAULT 0", ()).map_err(|e| e.to_string())?;
+    }
+    // Add created_at and deleted_at for sync support
+    if !column_exists(conn, "item_tags", "created_at") {
+        conn.execute("ALTER TABLE item_tags ADD COLUMN created_at INTEGER DEFAULT 0", ()).map_err(|e| e.to_string())?;
+    }
+    if !column_exists(conn, "item_tags", "deleted_at") {
+        conn.execute("ALTER TABLE item_tags ADD COLUMN deleted_at INTEGER DEFAULT NULL", ()).map_err(|e| e.to_string())?;
     }
 
     // Level 3: Tag-Tag multi-parent relationship (tag can have multiple parent tags)
@@ -238,6 +261,13 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
     // Add updated_at if missing
     if !column_exists(conn, "tag_tags", "updated_at") {
         conn.execute("ALTER TABLE tag_tags ADD COLUMN updated_at INTEGER DEFAULT 0", ()).map_err(|e| e.to_string())?;
+    }
+    // Add created_at and deleted_at for sync support
+    if !column_exists(conn, "tag_tags", "created_at") {
+        conn.execute("ALTER TABLE tag_tags ADD COLUMN created_at INTEGER DEFAULT 0", ()).map_err(|e| e.to_string())?;
+    }
+    if !column_exists(conn, "tag_tags", "deleted_at") {
+        conn.execute("ALTER TABLE tag_tags ADD COLUMN deleted_at INTEGER DEFAULT NULL", ()).map_err(|e| e.to_string())?;
     }
 
     // Level 4: Window state persistence
@@ -277,6 +307,15 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
         conn.execute("ALTER TABLE workspaces ADD COLUMN updated_at INTEGER DEFAULT 0", ())
             .map_err(|e| format!("Failed to add updated_at to workspaces: {}", e))?;
     }
+    // Add created_at and deleted_at for sync support
+    if !column_exists(conn, "workspaces", "created_at") {
+        conn.execute("ALTER TABLE workspaces ADD COLUMN created_at INTEGER DEFAULT 0", ())
+            .map_err(|e| format!("Failed to add created_at to workspaces: {}", e))?;
+    }
+    if !column_exists(conn, "workspaces", "deleted_at") {
+        conn.execute("ALTER TABLE workspaces ADD COLUMN deleted_at INTEGER DEFAULT NULL", ())
+            .map_err(|e| format!("Failed to add deleted_at to workspaces: {}", e))?;
+    }
 
     // Level 7: Workspace Directories table
     conn.execute(
@@ -302,6 +341,15 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
     if !column_exists(conn, "workspace_dirs", "updated_at") {
         conn.execute("ALTER TABLE workspace_dirs ADD COLUMN updated_at INTEGER DEFAULT 0", ())
             .map_err(|e| format!("Failed to add updated_at to workspace_dirs: {}", e))?;
+    }
+    // Add created_at and deleted_at for sync support
+    if !column_exists(conn, "workspace_dirs", "created_at") {
+        conn.execute("ALTER TABLE workspace_dirs ADD COLUMN created_at INTEGER DEFAULT 0", ())
+            .map_err(|e| format!("Failed to add created_at to workspace_dirs: {}", e))?;
+    }
+    if !column_exists(conn, "workspace_dirs", "deleted_at") {
+        conn.execute("ALTER TABLE workspace_dirs ADD COLUMN deleted_at INTEGER DEFAULT NULL", ())
+            .map_err(|e| format!("Failed to add deleted_at to workspace_dirs: {}", e))?;
     }
 
     // Add workspace_id column to items if missing

@@ -25,9 +25,9 @@ impl ItemPositioningOperations for super::item_repo::ItemRepository {
         
         let query = match parent_id {
             Some(pid) => format!(
-                "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id = {}", pid
+                "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id = {} AND deleted_at IS NULL", pid
             ),
-            None => "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id IS NULL".to_string(),
+            None => "SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE parent_id IS NULL AND deleted_at IS NULL".to_string(),
         };
         
         let mut stmt = conn.prepare(&query)
@@ -52,8 +52,8 @@ impl ItemPositioningOperations for super::item_repo::ItemRepository {
         
         {
             let mut stmt = match parent_id {
-                Some(pid) => conn.prepare("SELECT id FROM items WHERE parent_id = ? ORDER BY position, id").map_err(|e| DomainError::Internal(e.to_string()))?,
-                None => conn.prepare("SELECT id FROM items WHERE parent_id IS NULL ORDER BY position, id").map_err(|e| DomainError::Internal(e.to_string()))?,
+                Some(pid) => conn.prepare("SELECT id FROM items WHERE parent_id = ? AND deleted_at IS NULL ORDER BY position, id").map_err(|e| DomainError::Internal(e.to_string()))?,
+                None => conn.prepare("SELECT id FROM items WHERE parent_id IS NULL AND deleted_at IS NULL ORDER BY position, id").map_err(|e| DomainError::Internal(e.to_string()))?,
             };
             
             let mut rows = match parent_id {
@@ -70,7 +70,7 @@ impl ItemPositioningOperations for super::item_repo::ItemRepository {
         // Update each item with sequential position
         for (new_pos, id) in ids.iter().enumerate() {
             conn.execute(
-                "UPDATE items SET position = ?, updated_at = ? WHERE id = ?",
+                "UPDATE items SET position = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
                 params![new_pos as i32, chrono::Utc::now().timestamp_millis(), *id],
             )
             .map_err(|e| DomainError::Internal(e.to_string()))?;

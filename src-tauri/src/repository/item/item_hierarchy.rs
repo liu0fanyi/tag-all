@@ -30,8 +30,8 @@ impl ItemHierarchyOperations for super::item_repo::ItemRepository {
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
         let mut stmt = match parent_id {
-            Some(_) => conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE parent_id = ? ORDER BY position").map_err(|e| DomainError::Internal(e.to_string()))?,
-            None => conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE parent_id IS NULL ORDER BY position").map_err(|e| DomainError::Internal(e.to_string()))?,
+            Some(_) => conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE parent_id = ? AND deleted_at IS NULL ORDER BY position").map_err(|e| DomainError::Internal(e.to_string()))?,
+            None => conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE parent_id IS NULL AND deleted_at IS NULL ORDER BY position").map_err(|e| DomainError::Internal(e.to_string()))?,
         };
         
         let mut rows = match parent_id {
@@ -56,14 +56,14 @@ impl ItemHierarchyOperations for super::item_repo::ItemRepository {
              match new_parent_id {
                  Some(pid) => {
                      conn.execute(
-                         "UPDATE items SET position = position + 1 WHERE parent_id = ? AND position >= ? AND id != ?",
+                         "UPDATE items SET position = position + 1 WHERE parent_id = ? AND position >= ? AND id != ? AND deleted_at IS NULL",
                          params![pid, position, id],
                      )
                      .map_err(|e| DomainError::Internal(e.to_string()))?;
                  }
                  None => {
                      conn.execute(
-                         "UPDATE items SET position = position + 1 WHERE parent_id IS NULL AND position >= ? AND id != ?",
+                         "UPDATE items SET position = position + 1 WHERE parent_id IS NULL AND position >= ? AND id != ? AND deleted_at IS NULL",
                          params![position, id],
                      )
                      .map_err(|e| DomainError::Internal(e.to_string()))?;
@@ -94,7 +94,7 @@ impl ItemHierarchyOperations for super::item_repo::ItemRepository {
         let mut result = Vec::new();
         let mut to_visit = vec![id];
         
-        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE parent_id = ?")
+        let mut stmt = conn.prepare("SELECT id, text, completed, item_type, memo, target_count, current_count, parent_id, position, collapsed, url, summary, CAST(created_at AS INTEGER) as created_at, CAST(updated_at AS INTEGER) as updated_at, content_hash, quick_hash, last_known_path, is_dir FROM items WHERE parent_id = ? AND deleted_at IS NULL")
             .map_err(|e| DomainError::Internal(e.to_string()))?;
         
         while let Some(current_id) = to_visit.pop() {
@@ -116,7 +116,7 @@ impl ItemHierarchyOperations for super::item_repo::ItemRepository {
         let conn = guard.as_ref().ok_or(DomainError::Internal("Database not initialized".to_string()))?;
         
         // Get current collapsed state
-        let mut stmt = conn.prepare("SELECT collapsed FROM items WHERE id = ?")
+        let mut stmt = conn.prepare("SELECT collapsed FROM items WHERE id = ? AND deleted_at IS NULL")
             .map_err(|e| DomainError::Internal(e.to_string()))?;
             
         let mut rows = stmt.query(params![id])
