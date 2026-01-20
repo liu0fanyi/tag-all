@@ -11,7 +11,7 @@ use tauri_sync_db_backend::validate_cloud_connection;
 
 // Import generic sync
 use tauri_sync_db_backend::sync::{sync_all, DynamicSchema};
-use reqwest;
+use tauri_plugin_http::reqwest;
 
 /// Helper to perform sync using generic backend
 async fn perform_sync(state: &tauri_sync_db_backend::DbState) -> Result<(), String> {
