@@ -8,3 +8,6 @@
 keystore.properties
 local.properties
 src-tauri/gen/
+
+# Local config
+.cargo/config.toml
