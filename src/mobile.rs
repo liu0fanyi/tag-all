@@ -1,8 +1,10 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use crate::commands;
-use crate::models::Item;
+use crate::models::{Item, Tag};
+use std::collections::{HashSet, HashMap};
 use crate::commands::CreateItemArgs;
+use crate::tree::flatten_tree;
 use tauri_sync_db_frontend::{GenericBottomNav, SyncSettingsForm};
 
 /// Mobile view selection
@@ -24,6 +26,17 @@ pub fn MobileApp() -> impl IntoView {
     let (edit_title, set_edit_title) = signal(String::new());
     let (edit_memo, set_edit_memo) = signal(String::new());
 
+    // Tag Sidebar State
+    let (sidebar_open, set_sidebar_open) = signal(false);
+    let (all_tags, set_all_tags) = signal(Vec::<Tag>::new());
+    let (filter_tags, set_filter_tags) = signal(HashSet::<String>::new());
+    let (filter_op_and, set_filter_op_and) = signal(false); // Default OR
+    
+    // Cache for item tags: ItemID -> TagNames
+    let (item_tags_cache, set_item_tags_cache) = signal(HashMap::<u32, Vec<String>>::new());
+
+    // Load items helper
+
     // Load items helper
     let load_items = move |set_items: WriteSignal<Vec<Item>>| {
         spawn_local(async move {
@@ -33,9 +46,57 @@ pub fn MobileApp() -> impl IntoView {
         });
     };
 
+    // Load ALL tags for flattening
+    let load_tags = move |set_all_tags: WriteSignal<Vec<Tag>>| {
+        spawn_local(async move {
+            if let Ok(tags) = commands::list_tags().await {
+                set_all_tags.set(tags);
+            }
+        });
+    };
+    
+    // Tag Tree Helper: (id, name, children_ids)
+    // Actually, getting children from flat list requires knowing parent_id. 
+    // Tag struct has NO parent_id field. 
+    // So we MUST use commands to get structure provided by backend (db relations).
+    // The backend `list_tags` returns just tags. 
+    // We need `get_root_tags` and `get_tag_children`.
+    
+    let (root_tags, set_root_tags) = signal(Vec::<Tag>::new());
+    
+    let load_root_tags = move |set_root_tags: WriteSignal<Vec<Tag>>| {
+        spawn_local(async move {
+             if let Ok(roots) = commands::get_root_tags().await {
+                 set_root_tags.set(roots);
+             }
+        });
+    };
+
     // Initial load
     Effect::new(move |_| {
         load_items(set_items);
+        load_tags(set_all_tags); // Keep this for now if used elsewhere? 
+        // actually filter depends on all_tags, but we want tree in sidebar.
+        load_root_tags(set_root_tags);
+    });
+
+    // Fetch tags for items when items are loaded
+    Effect::new(move |_| {
+        let current_items = items.get();
+        for item in current_items {
+            let id = item.id;
+            // Only fetch if not in cache (optimization)
+            if !item_tags_cache.with(|c| c.contains_key(&id)) {
+                spawn_local(async move {
+                    if let Ok(tags) = commands::get_item_tags(id).await {
+                         let tag_names: Vec<String> = tags.into_iter().map(|t| t.name).collect();
+                         set_item_tags_cache.update(|c| {
+                             c.insert(id, tag_names);
+                         });
+                    }
+                });
+            }
+        }
     });
 
     let add_todo = move |_| {
@@ -64,6 +125,15 @@ pub fn MobileApp() -> impl IntoView {
             let _ = commands::toggle_item(id).await;
             if let Ok(loaded) = commands::list_items_by_workspace(1).await {
                 set_items.set(loaded);
+            }
+        });
+    };
+
+    let toggle_collapse = move |id: u32| {
+        spawn_local(async move {
+            let _ = commands::toggle_collapsed(id).await;
+            if let Ok(loaded) = commands::list_items_by_workspace(1).await {
+                 set_items.set(loaded);
             }
         });
     };
@@ -101,6 +171,44 @@ pub fn MobileApp() -> impl IntoView {
         }
     };
 
+    let toggle_filter_tag = move |tag_name: String| {
+        set_filter_tags.update(|s| {
+            if s.contains(&tag_name) {
+                s.remove(&tag_name);
+            } else {
+                s.insert(tag_name);
+            }
+        });
+    };
+
+    let filtered_items = move || {
+        let all = items.get();
+        let selected = filter_tags.get();
+        
+        // If no filter, return flattened tree
+        if selected.is_empty() {
+             return flatten_tree(&all);
+        }
+        
+        let is_and = filter_op_and.get();
+        let cache = item_tags_cache.get();
+
+        // If filtered, return flat list with depth 0
+        all.into_iter().filter(|item| {
+             if let Some(tags) = cache.get(&item.id) {
+                 if is_and {
+                     selected.iter().all(|t| tags.contains(t))
+                 } else {
+                     selected.iter().any(|t| tags.contains(t))
+                 }
+             } else {
+                 false 
+             }
+        })
+        .map(|item| (item, 0)) // Depth 0 for filtered results
+        .collect::<Vec<(Item, usize)>>()
+    };
+
     view! {
         <div class="mobile-app-container" style="display: flex; flex-direction: column; height: 100vh;">
             // Main content area
@@ -108,7 +216,15 @@ pub fn MobileApp() -> impl IntoView {
                 {move || match current_view.get() {
                     MobileView::Main => view! {
                         <div style="padding: 20px; font-family: sans-serif;">
-                            <h1>"My Todos"</h1>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-top: env(safe-area-inset-top);">
+                                <h1 style="margin: 0;">"Todos & Tags"</h1>
+                                <button 
+                                    on:click=move |_| set_sidebar_open.set(true)
+                                    style="padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px; background: white;"
+                                >
+                                    "🏷️"
+                                </button>
+                            </div>
                             
                             <div class="add-form" style="display: flex; gap: 10px; margin-bottom: 20px;">
                                 <input
@@ -128,19 +244,49 @@ pub fn MobileApp() -> impl IntoView {
 
                             <div class="todo-list">
                                 <For
-                                    each=move || items.get()
-                                    key=|item| item.id
-                                    children=move |item| {
+                                    each=filtered_items
+                                    key=|(item, _)| item.id
+                                    children=move |(item, depth)| {
                                         let item_clone = item.clone();
+                                        let indent = depth * 20;
+                                        
+                                        // Check if item has children (for showing toggle)
+                                        // Since we are flattening, we can't easily peek ahead in the iterator in this scope
+                                        // But we can check if any OTHER item has this item as parent
+                                        // However, iterating all items here is expensive.
+                                        // Best way: compute has_children map during filtering/flattening?
+                                        // Or just check if next item in filtered list has depth > current depth? 
+                                        // Flatten_tree output puts children immediately after parent.
+                                        
+                                        // Optimization: Pre-calculate parent set
+                                        let has_children = items.with(|list| list.iter().any(|i| i.parent_id == Some(item.id)));
+
                                         view! {
                                             <div 
                                                 class="todo-item" 
-                                                style="display: flex; align-items: center; padding: 15px 10px; border-bottom: 1px solid #eee; cursor: pointer; user-select: none; -webkit-user-select: none;"
+                                                style=format!("display: flex; align-items: center; padding: 15px 10px 15px {}px; border-bottom: 1px solid #eee; cursor: pointer; user-select: none; -webkit-user-select: none;", 10 + indent)
                                                 on:click=move |_| {
                                                     web_sys::console::log_1(&format!("Row clicked: {}", item_clone.id).into());
                                                     open_editor(item_clone.clone());
                                                 }
                                             >
+                                                // Collapse toggle
+                                                <div 
+                                                    style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; margin-right: 5px;"
+                                                    on:click=move |ev| {
+                                                        ev.stop_propagation();
+                                                        if has_children {
+                                                            toggle_collapse(item.id);
+                                                        }
+                                                    }
+                                                >
+                                                    {if has_children {
+                                                        if item.collapsed { "▶" } else { "▼" }
+                                                    } else {
+                                                        ""
+                                                    }}
+                                                </div>
+
                                                 <input
                                                     type="checkbox"
                                                     checked=item.completed
@@ -161,6 +307,63 @@ pub fn MobileApp() -> impl IntoView {
                                     }
                                 />
                             </div>
+
+                            // Sidebar Overlay
+                            {move || if sidebar_open.get() {
+                                view! {
+                                    <div 
+                                        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background: rgba(0,0,0,0.5);"
+                                        on:click=move |_| set_sidebar_open.set(false)
+                                    >
+                                        <div 
+                                            style="position: absolute; right: 0; top: 0; width: 80%; height: 100%; background: white; box-shadow: -2px 0 5px rgba(0,0,0,0.2); padding: 20px; display: flex; flex-direction: column;"
+                                            on:click=move |ev| ev.stop_propagation()
+                                        >
+                                            <div style="flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                                <h3 style="margin: 0;">"Filter Tags"</h3>
+                                                <button 
+                                                    on:click=move |_| set_sidebar_open.set(false)
+                                                    style="border: none; background: transparent; font-size: 20px;"
+                                                >
+                                                    "✕"
+                                                </button>
+                                            </div>
+                                            
+                                            <div style="margin-bottom: 15px;">
+                                                <label style="display: flex; align-items: center;">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        prop:checked=filter_op_and
+                                                        on:change=move |ev| set_filter_op_and.set(event_target_checked(&ev))
+                                                        style="margin-right: 10px;" 
+                                                    />
+                                                    "Match All (AND)"
+                                                </label>
+                                            </div>
+
+                                            <div style="flex: 1; overflow-y: auto; padding-bottom: 50px;">
+                                                // Recursive Tag Tree Rendering
+                                                <For
+                                                    each=move || root_tags.get()
+                                                    key=|tag| tag.id
+                                                    children=move |tag| {
+                                                        view! {
+                                                            <MobileTagNode 
+                                                                tag=tag 
+                                                                depth=0 
+                                                                filter_tags=filter_tags.into() 
+                                                                set_filter_tags=set_filter_tags
+                                                            />
+                                                        }
+                                                    }
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <span style="display: none;"></span> }.into_any()
+                            }}
                         </div>
                     }.into_any(),
                     MobileView::Settings => view! {
@@ -233,6 +436,106 @@ pub fn MobileApp() -> impl IntoView {
                 }.into_any()
             } else {
                 view! { <span></span> }.into_any()
+            }}
+        </div>
+    }
+}
+
+/// Recursive Mobile Tag Node
+#[component]
+fn MobileTagNode(
+    tag: Tag,
+    depth: usize,
+    filter_tags: Signal<HashSet<String>>,
+    set_filter_tags: WriteSignal<HashSet<String>>,
+) -> impl IntoView {
+    let id = tag.id;
+    let name = tag.name.clone();
+    let name_for_select = name.clone();
+    let name_for_toggle_div = name.clone();
+    let name_for_toggle_input = name.clone();
+    
+    // Load children
+    let (children, set_children) = signal(Vec::<Tag>::new());
+    let (expanded, set_expanded) = signal(true); // Default expanded for visibility
+
+    Effect::new(move |_| {
+        spawn_local(async move {
+            if let Ok(child_tags) = commands::get_tag_children(id).await {
+                set_children.set(child_tags);
+            }
+        });
+    });
+
+    let is_selected = move || filter_tags.with(|s| s.contains(&name_for_select));
+    let has_children = move || !children.get().is_empty();
+    
+    // Toggle filter logic used by parent
+    let toggle_filter = move |tag_name: String| {
+        set_filter_tags.update(|s| {
+            if s.contains(&tag_name) {
+                s.remove(&tag_name);
+            } else {
+                s.insert(tag_name);
+            }
+        });
+    };
+
+    view! {
+        <div style="display: flex; flex-direction: column;">
+            <div 
+                style=format!("padding: 10px 10px 10px {}px; border-bottom: 1px solid #eee; display: flex; align-items: center;", 10 + depth * 20)
+                on:click=move |_| toggle_filter(name_for_toggle_div.clone())
+            >
+                // Expand toggle (only if children)
+                 <div 
+                    style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; margin-right: 5px;"
+                    on:click=move |ev| {
+                        ev.stop_propagation();
+                        if has_children() {
+                            set_expanded.update(|v| *v = !*v);
+                        }
+                    }
+                >
+                    {move || if has_children() {
+                        if expanded.get() { "▼" } else { "▶" }
+                    } else {
+                        "·" // Placeholder
+                    }}
+                </div>
+
+                <input 
+                    type="checkbox" 
+                    prop:checked=is_selected
+                    style="margin-right: 10px;"
+                    on:click=move |ev| ev.stop_propagation()
+                    on:change=move |_| toggle_filter(name_for_toggle_input.clone())
+                />
+                <span>{tag.name}</span>
+            </div>
+            
+            // Children
+            {move || if expanded.get() {
+                view! {
+                    <div>
+                        <For
+                            each=move || children.get()
+                            key=|child| child.id
+                            children=move |child| {
+                                view! {
+                                    <MobileTagNode 
+                                        tag=child 
+                                        depth=depth + 1 
+                                        filter_tags=filter_tags 
+                                        set_filter_tags=set_filter_tags
+                                    />
+                                }
+                            }
+                        />
+                    </div>
+                }.into_any()
+            } else {
+                view! { <div></div> }.into_any()
             }}
         </div>
     }
