@@ -4,7 +4,7 @@ use crate::commands;
 use crate::models::{Item, Tag};
 use std::collections::{HashSet, HashMap};
 use crate::commands::CreateItemArgs;
-use crate::tree::flatten_tree;
+use crate::tree::{flatten_tree, flatten_tree_sorted, TreeSortMode};
 use tauri_sync_db_frontend::{GenericBottomNav, SyncSettingsForm};
 
 /// Mobile view selection
@@ -34,6 +34,9 @@ pub fn MobileApp() -> impl IntoView {
     
     // Cache for item tags: ItemID -> TagNames
     let (item_tags_cache, set_item_tags_cache) = signal(HashMap::<u32, Vec<String>>::new());
+    
+    // Sort State
+    let (sort_uncompleted, set_sort_uncompleted) = signal(false);
 
     // Load items helper
 
@@ -182,12 +185,28 @@ pub fn MobileApp() -> impl IntoView {
     };
 
     let filtered_items = move || {
-        let all = items.get();
+        let mut all = items.get();
         let selected = filter_tags.get();
+        let sort_unc = sort_uncompleted.get();
         
-        // If no filter, return flattened tree
+        // Sorting Logic
+        if sort_unc {
+             all.sort_by(|a, b| {
+                match (a.completed, b.completed) {
+                    (false, true) => std::cmp::Ordering::Less,
+                    (true, false) => std::cmp::Ordering::Greater,
+                    _ => a.position.cmp(&b.position), // Stable sort by position if same completion
+                }
+            });
+        }
+
+        // If no filter, return flattened tree (sorted or not)
         if selected.is_empty() {
-             return flatten_tree(&all);
+             if sort_unc {
+                 return flatten_tree_sorted(&all, TreeSortMode::Preserve);
+             } else {
+                 return flatten_tree(&all);
+             }
         }
         
         let is_and = filter_op_and.get();
@@ -208,6 +227,32 @@ pub fn MobileApp() -> impl IntoView {
         .map(|item| (item, 0)) // Depth 0 for filtered results
         .collect::<Vec<(Item, usize)>>()
     };
+    
+    let reset_all = move |_| {
+         if !web_sys::window().unwrap().confirm_with_message("Reset all items?").unwrap_or(false) {
+             return;
+         }
+         spawn_local(async move {
+             match commands::reset_all_items(1).await {
+                 Ok(count) => {
+                     web_sys::console::log_1(&format!("Reset success, modified {} rows", count).into());
+                 },
+                 Err(e) => {
+                     web_sys::console::error_1(&format!("Reset failed: {:?}", e).into());
+                 }
+             }
+             
+             match commands::list_items_by_workspace(1).await {
+                 Ok(loaded) => {
+                     web_sys::console::log_1(&format!("Reloaded {} items", loaded.len()).into());
+                     set_items.set(loaded);
+                 },
+                 Err(e) => {
+                     web_sys::console::error_1(&format!("Reload failed: {:?}", e).into());
+                 }
+             }
+         });
+    };
 
     view! {
         <div class="mobile-app-container" style="display: flex; flex-direction: column; height: 100vh;">
@@ -226,7 +271,7 @@ pub fn MobileApp() -> impl IntoView {
                                 </button>
                             </div>
                             
-                            <div class="add-form" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                            <div class="add-form" style="display: flex; gap: 10px; margin-bottom: 10px;">
                                 <input
                                     type="text"
                                     prop:value=new_todo
@@ -242,10 +287,31 @@ pub fn MobileApp() -> impl IntoView {
                                 </button>
                             </div>
 
+                            // Sort & Reset Controls
+                            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                                <button
+                                    on:click=move |_| set_sort_uncompleted.update(|v| *v = !*v)
+                                    class=move || if sort_uncompleted.get() { "mobile-btn active" } else { "mobile-btn" }
+                                    style=move || if sort_uncompleted.get() { 
+                                        "padding: 5px 10px; border: 1px solid #666; background: #666; color: white; border-radius: 4px; font-size: 14px;" 
+                                    } else { 
+                                        "padding: 5px 10px; border: 1px solid #ccc; background: white; border-radius: 4px; font-size: 14px;" 
+                                    }
+                                >
+                                    "未完成优先"
+                                </button>
+                                <button
+                                    on:click=reset_all
+                                    style="padding: 5px 10px; border: 1px solid #ccc; background: white; border-radius: 4px; font-size: 14px;"
+                                >
+                                    "🔄 重置"
+                                </button>
+                            </div>
+
                             <div class="todo-list">
                                 <For
                                     each=filtered_items
-                                    key=|(item, _)| item.id
+                                    key=|(item, _)| (item.id, item.completed)
                                     children=move |(item, depth)| {
                                         let item_clone = item.clone();
                                         let indent = depth * 20;
@@ -289,7 +355,7 @@ pub fn MobileApp() -> impl IntoView {
 
                                                 <input
                                                     type="checkbox"
-                                                    checked=item.completed
+                                                    prop:checked=item.completed
                                                     on:change=move |_| toggle_item(item.id)
                                                     on:click=move |ev| ev.stop_propagation()
                                                     style="margin-right: 15px; width: 25px; height: 25px;"
