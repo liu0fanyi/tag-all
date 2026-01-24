@@ -10,6 +10,7 @@ use tauri_sync_db_frontend::{GenericBottomNav, SyncSettingsForm};
 enum MobileView {
     Main,
     Settings,
+    Editor,
 }
 
 #[component]
@@ -17,6 +18,11 @@ pub fn MobileApp() -> impl IntoView {
     let (current_view, set_current_view) = signal(MobileView::Main);
     let (items, set_items) = signal(Vec::<Item>::new());
     let (new_todo, set_new_todo) = signal(String::new());
+    
+    // Editor state
+    let (editing_item_id, set_editing_item_id) = signal::<Option<u32>>(None);
+    let (edit_title, set_edit_title) = signal(String::new());
+    let (edit_memo, set_edit_memo) = signal(String::new());
 
     // Load items helper
     let load_items = move |set_items: WriteSignal<Vec<Item>>| {
@@ -61,6 +67,39 @@ pub fn MobileApp() -> impl IntoView {
             }
         });
     };
+    
+    // Open editor
+    let open_editor = move |item: Item| {
+        set_editing_item_id.set(Some(item.id));
+        set_edit_title.set(item.text);
+        set_edit_memo.set(item.memo.unwrap_or_default());
+        set_current_view.set(MobileView::Editor);
+    };
+    
+    // Save editor content
+    // Save editor content
+    let save_editor = move |_| {
+        if let Some(id) = editing_item_id.get() {
+            let title = edit_title.get();
+            let memo = edit_memo.get();
+             spawn_local(async move {
+                // Update title and memo
+                let _ = commands::update_item_full(
+                    id, 
+                    Some(&title), 
+                    None, 
+                    None, 
+                    Some(&memo)
+                ).await;
+                
+                // Reload list
+                if let Ok(loaded) = commands::list_items_by_workspace(1).await {
+                    set_items.set(loaded);
+                }
+                set_current_view.set(MobileView::Main);
+            });
+        }
+    };
 
     view! {
         <div class="mobile-app-container" style="display: flex; flex-direction: column; height: 100vh;">
@@ -92,15 +131,29 @@ pub fn MobileApp() -> impl IntoView {
                                     each=move || items.get()
                                     key=|item| item.id
                                     children=move |item| {
+                                        let item_clone = item.clone();
                                         view! {
-                                            <div class="todo-item" style="display: flex; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
+                                            <div 
+                                                class="todo-item" 
+                                                style="display: flex; align-items: center; padding: 15px 10px; border-bottom: 1px solid #eee; cursor: pointer; user-select: none; -webkit-user-select: none;"
+                                                on:click=move |_| {
+                                                    web_sys::console::log_1(&format!("Row clicked: {}", item_clone.id).into());
+                                                    open_editor(item_clone.clone());
+                                                }
+                                            >
                                                 <input
                                                     type="checkbox"
                                                     checked=item.completed
                                                     on:change=move |_| toggle_item(item.id)
-                                                    style="margin-right: 10px; width: 20px; height: 20px;"
+                                                    on:click=move |ev| ev.stop_propagation()
+                                                    style="margin-right: 15px; width: 25px; height: 25px;"
                                                 />
-                                                <span style=if item.completed { "text-decoration: line-through; color: #888;" } else { "" }>
+                                                <span 
+                                                    style=if item.completed { "text-decoration: line-through; color: #888; flex: 1; font-size: 16px;" } else { "flex: 1; font-size: 16px;" }
+                                                    on:click=move |ev| {
+                                                        web_sys::console::log_1(&format!("Span clicked: {}", item_clone.id).into());
+                                                    }
+                                                >
                                                     {item.text}
                                                 </span>
                                             </div>
@@ -113,27 +166,75 @@ pub fn MobileApp() -> impl IntoView {
                     MobileView::Settings => view! {
                         <SyncSettingsForm on_back=move || set_current_view.set(MobileView::Main) />
                     }.into_any(),
+                     MobileView::Editor => view! {
+                         <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; background: white; display: flex; flex-direction: column;">
+                            <div style="flex: 0 0 auto; padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white;">
+                                <button 
+                                    on:click=move |_| set_current_view.set(MobileView::Main)
+                                    style="padding: 8px 15px; background: #eee; border: none; border-radius: 4px;"
+                                >
+                                    "Cancel"
+                                </button>
+                                <h3 style="margin: 0;">"Edit Todo"</h3>
+                                <button 
+                                    on:click=save_editor
+                                    style="padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px;"
+                                >
+                                    "Save"
+                                </button>
+                            </div>
+                            
+                            <div style="flex: 1; display: flex; flex-direction: column; padding: 20px; overflow: hidden;">
+                                <div style="margin-bottom: 15px; flex-shrink: 0;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">"Title"</label>
+                                    <input
+                                        type="text"
+                                        prop:value=edit_title
+                                        on:input=move |ev| set_edit_title.set(event_target_value(&ev))
+                                        style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; box-sizing: border-box;"
+                                    />
+                                </div>
+                                
+                                <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">"Memo (Markdown)"</label>
+                                    <textarea
+                                        prop:value=edit_memo
+                                        on:input=move |ev| set_edit_memo.set(event_target_value(&ev))
+                                        style="flex: 1; width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; resize: none; box-sizing: border-box;"
+                                        placeholder="# Write markdown here..."
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    }.into_any(),
                 }}
             </div>
             
-            // Bottom navigation
-            <GenericBottomNav on_settings_click=Box::new(move || {
-                set_current_view.update(|v| {
-                    *v = if *v == MobileView::Settings { 
-                        MobileView::Main 
-                    } else { 
-                        MobileView::Settings 
-                    };
-                });
-            })>
-                <button
-                    class=move || if current_view.get() == MobileView::Main { "mobile-nav-item active" } else { "mobile-nav-item" }
-                    on:click=move |_| set_current_view.set(MobileView::Main)
-                >
-                    <div class="mobile-nav-icon">"📝"</div>
-                    <div class="mobile-nav-label">"待办"</div>
-                </button>
-            </GenericBottomNav>
+            // Bottom navigation (Hide in Editor mode)
+            {move || if current_view.get() != MobileView::Editor {
+                view! {
+                    <GenericBottomNav on_settings_click=Box::new(move || {
+                        set_current_view.update(|v| {
+                            *v = if *v == MobileView::Settings { 
+                                MobileView::Main 
+                            } else { 
+                                MobileView::Settings 
+                            };
+                        });
+                    })>
+                        <button
+                            class=move || if current_view.get() == MobileView::Main { "mobile-nav-item active" } else { "mobile-nav-item" }
+                            on:click=move |_| set_current_view.set(MobileView::Main)
+                        >
+                            <div class="mobile-nav-icon">"📝"</div>
+                            <div class="mobile-nav-label">"待办"</div>
+                        </button>
+                    </GenericBottomNav>
+                }.into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
         </div>
     }
 }
+

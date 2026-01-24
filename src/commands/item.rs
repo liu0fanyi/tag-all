@@ -121,6 +121,43 @@ pub async fn update_item(id: u32, text: Option<&str>, item_type: Option<&str>) -
     serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
 }
 
+pub async fn update_item_full(
+    id: u32,
+    text: Option<&str>,
+    completed: Option<bool>,
+    item_type: Option<&str>,
+    memo: Option<&str>,
+) -> Result<Item, String> {
+    // Build JSON string with camelCase for Tauri IPC
+    let mut json = format!(r#"{{"id":{}"#, id);
+    if let Some(t) = text {
+        // Escape text
+        let escaped = t.replace('\\', "\\\\").replace('"', "\\\"");
+        json.push_str(&format!(r#","text":"{}""#, escaped));
+    }
+    if let Some(c) = completed {
+        json.push_str(&format!(r#","completed":{}"#, c));
+    }
+    if let Some(it) = item_type {
+        json.push_str(&format!(r#","itemType":"{}""#, it));
+    }
+    if let Some(m) = memo {
+        // Escape memo
+        let escaped = m
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        json.push_str(&format!(r#","memo":"{}""#, escaped));
+    }
+    json.push('}');
+    
+    let js_args = js_sys::JSON::parse(&json).map_err(|e| format!("JSON parse error: {:?}", e))?;
+    let result = invoke("update_item", js_args).await;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}
+
 pub async fn decrement_item(id: u32) -> Result<Item, String> {
     let js_args = serde_wasm_bindgen::to_value(&IdArgs { id }).map_err(|e| e.to_string())?;
     let result = invoke("decrement_item", js_args).await;
