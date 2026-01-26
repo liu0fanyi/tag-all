@@ -79,10 +79,16 @@ pub async fn shrink_window(app: AppHandle, width: u32, height: u32) -> Result<()
         if window.is_maximized().unwrap_or(false) {
             return Ok(());
         }
+
+        // Get current size to preserve height if it's taller
+        let current_size = window.outer_size().map_err(|e| e.to_string())?;
+
+        // Use the larger of current height or target height
+        let new_height = height.max(current_size.height);
         
         window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
             width,
-            height,
+            height: new_height,
         })).map_err(|e| e.to_string())?;
     }
     

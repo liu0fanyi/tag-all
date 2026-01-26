@@ -58,13 +58,13 @@ pub fn TitleBar(
             <Show when=move || !is_pinned.get()>
                 <div class="titlebar-drag-region" data-tauri-drag-region>
                     <img src="public/icon.png" class="titlebar-icon" alt="" />
-                    <span class="titlebar-title">"Tag-All"</span>
+                    <span class="titlebar-title">{format!("Tag-All v{}", env!("CARGO_PKG_VERSION"))}</span>
                 </div>
             </Show>
             <Show when=move || is_pinned.get()>
                 <div class="titlebar-drag-region locked">
                     <img src="public/icon.png" class="titlebar-icon" alt="" />
-                    <span class="titlebar-title">"Tag-All"</span>
+                    <span class="titlebar-title">{format!("Tag-All v{}", env!("CARGO_PKG_VERSION"))}</span>
                     <span class="lock-icon">"🔒"</span>
                 </div>
             </Show>

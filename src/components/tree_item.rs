@@ -145,6 +145,7 @@ pub fn TreeItem(
                 // Close editor
                 set_editing_target.set(None);
                 set_memo_editing_target.set(None);
+                // Do not shrink window on close
                 spawn_local(async {
                     let _ = commands::shrink_window(800, 700).await;
                 });
